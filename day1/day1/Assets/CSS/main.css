@@ -1,0 +1,44 @@
+h2 {
+    color: blue;
+    background-color: yellowgreen;
+    text-align: right;
+}
+
+#custom-header{
+    color: black;
+}
+
+.p3{
+    color: blue;
+    background-color: brown;
+}
+.text-prop{
+    font-size: 30px;
+    font-family: 'Times New Roman', Times, serif;
+    font-style: italic;
+    text-align: center;
+    text-decoration: underline;
+    text-transform: uppercase;
+    text-shadow: 0px 2px 10px;
+    /* how to change shadow color */
+}
+.block{
+    background-color: black;
+    color: grey;
+    width: 50%;
+    height: 200px;
+/*     margin  = > outer space
+    padding  = > inner space */
+    margin-right: 10%;
+    padding-left: 5%;
+    padding-top: 5%;
+    /* border = > for outer border */
+    /* short hand combination of multiple css prop */
+/*     border 1st  = width of the border
+    border 2nd  => in which format do you want to see the border
+    border 3rd  => color of the border */
+    border: 2px solid red;
+    border-radius: 10px;
+    border-top-left-radius: 30px;
+
+}
