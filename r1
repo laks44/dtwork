@@ -1,0 +1,272 @@
+import React from "react";
+import {
+    Box,
+    Button,
+    CircularProgress,
+    Drawer,
+    Grid,
+    IconButton,
+    InputAdornment,
+    Modal,
+    Snackbar,
+    styled,
+    Table,
+    TableBody,
+    TableCell,
+    TableRow,
+    TextField,
+    Typography,
+} from "@mui/material";
+import PageContainer from "ui/common/containers/PageContainer";
+
+const StyledCell = styled(TableCell)({
+    border: "0.063rem solid #E6E9EC",
+    padding: "0.031rem",
+    pl: "0.063rem",
+    //fontFamily: "Roboto",
+    fontStyle: "normal",
+    fontWeight: 600,
+    fontSize: "0.875rem",
+    color: " rgba(0, 0, 0, 0.87)",
+});
+
+const StyledCell2 = styled(TableCell)({
+    border: "0.063rem solid #E6E9EC",
+    padding: "0.031rem",
+    pl: "0.063rem",
+    //fontFamily: "Roboto",
+    fontStyle: "normal",
+    fontWeight: 400,
+    fontSize: "0.875rem",
+    color: " rgba(0, 0, 0, 0.87)",
+});
+
+const style = {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    width: 400,
+    bgcolor: "background.paper",
+    borderRadius: "10px",
+    p: 4,
+    textAlign: "center",
+};
+
+
+const PatientDetailsTable = ({ patientData, mhid, handleMhid, handleSearch, handleButton, dnd }) => {
+    return (
+        <Box>
+            <PageContainer panel>
+                <Grid container sx={{ mt: 5, marginLeft: 30 }} spacing={2}>
+                    <Grid item sm={12} md={12} lg={7} xl={7}>
+                        <Box
+                            sx={{
+                                display: "flex",
+                                justifyContent: "center",
+                                alignItems: "center",
+                            }}
+                        >
+                            <TextField
+                                id="outlined-size-small"
+                                sx={{ width: "100%", height: "56px" }}
+                                placeholder="Enter MHID or Phone No. of patient..."
+                                InputProps={{
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <i className="ri-search-line"></i>
+                                        </InputAdornment>
+                                    ),
+                                    endAdornment: (
+                                        <Button
+                                            variant="contained"
+                                            sx={{ width: "100px", height: "40px", pt: 1 }}
+                                            onClick={handleSearch}
+                                        >
+                                            Search
+                                        </Button>
+                                    ),
+                                }}
+                                value={mhid}
+                                onChange={(e) => handleMhid(e.target.value)}
+                            />
+                        </Box>
+                        <Typography
+                            sx={{ fontWeight: 700, fontSize: "1rem", mt: 2, mb: 2 }}
+                        >
+                            Personal Details:
+                        </Typography>
+                        {
+                            patientData.map((patient) => (
+                                <Table
+                                    sx={{
+                                        border: "0.063rem solid #E6E9EC",
+                                        borderCollapse: "collapse",
+                                        mt: 4,
+                                        marginBottom:4
+                                    }}
+                                >
+                                    <TableBody>
+                                        <TableRow>
+                                            <StyledCell
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "20%",
+                                                }}
+                                            >
+                                                Name of patient
+                                            </StyledCell>
+                                            <StyledCell2
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "30%",
+                                                }}
+                                            >
+                                                <Typography> {patient.name}</Typography>
+                                            </StyledCell2>
+                                        </TableRow>
+                                        <TableRow>
+                                            <StyledCell
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "20%",
+                                                }}
+                                            >
+                                                Patient ID
+                                            </StyledCell>
+                                            <StyledCell2
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "30%",
+                                                }}
+                                            >
+                                                <Typography> {patient.patientId}</Typography>
+                                            </StyledCell2>
+                                        </TableRow>
+                                        <TableRow>
+                                            <StyledCell
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "20%",
+                                                }}
+                                            >
+                                                Phone number
+                                            </StyledCell>
+                                            <StyledCell2
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "30%",
+                                                }}
+                                            >
+                                                <Typography>{patient.mobileNo}</Typography>
+                                            </StyledCell2>
+                                        </TableRow>
+                                        <TableRow>
+                                            <StyledCell
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "20%",
+                                                }}
+                                            >
+                                                Address
+                                            </StyledCell>
+                                            <StyledCell2
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "100%",
+                                                    display: "flex",
+                                                    justifyContent: "space-between",
+                                                    alignItems: "center",
+                                                }}
+                                            >
+                                                <Typography>
+                                                    {patient?.address?.length > 0
+                                                        ? `${patient?.address[0]?.line?.join(", ")}, ${patient?.address[0]?.city}, ${patient?.address[0]?.state}, ${patient?.address[0]?.pincode}`
+                                                        : ''}
+                                                </Typography>
+                                            </StyledCell2>
+                                        </TableRow>
+                                        <TableRow>
+                                            <StyledCell
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "20%",
+                                                }}
+                                            >
+                                                DND Status
+                                            </StyledCell>
+                                            <StyledCell2
+                                                sx={{
+                                                    border: "0.063rem solid #E6E9EC",
+                                                    padding: "0.031rem",
+                                                    pl: "1rem",
+                                                    p: "0.5rem",
+                                                    width: "100%",
+                                                    display: "flex",
+                                                    justifyContent: "space-between",
+                                                    alignItems: "center",
+                                                }}
+                                            >
+                                                {patientData ? (
+                                                    !dnd ? (
+                                                        <Button
+                                                            variant="contained"
+                                                            // onClick={() => setDnd(true)}
+                                                            onClick={handleButton(patient.patientId)}
+                                                        >
+                                                            Enable
+                                                        </Button>
+                                                    ) : (
+                                                        <Button
+                                                            variant="contained"
+                                                            // onClick={() => setDnd(false)}
+                                                            onClick={handleButton(patient.patientId)}
+                                                        >
+                                                            Disable
+                                                        </Button>
+                                                    )) : null
+                                                }
+
+                                            </StyledCell2>
+                                        </TableRow>
+                                    </TableBody>
+
+                                </Table>
+                            ))
+                        }
+                    </Grid>
+                </Grid>
+            </PageContainer>
+        </Box>
+
+    );
+};
+
+export default PatientDetailsTable;
