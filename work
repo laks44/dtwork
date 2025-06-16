@@ -1,0 +1,3504 @@
+import {
+  Box,
+  Grid,
+  Typography,
+  Button,
+  Snackbar,
+  IconButton,
+} from "@mui/material";
+import React from "react";
+import MedicineModal from "./MedicineModal";
+import MedicineList from "./MedicineTable";
+import Image from "next/image";
+
+{
+  /*
+   * This component handles adding medicines to a particular order.
+   * It has the ADD MEDICINE, VIEW NEAR DUE REFILL PRESCRIPTIONS Buttons
+   * The table displays the added medicines
+   * We use medList prop to display added medicines before checking availability
+   * After checking availability we use avlList to display data in the table
+   */
+}
+
+const AddMedicine = (props: any) => {
+  const {
+    updateList,
+    medList,
+    prescriptions,
+    check,
+    avlList,
+    setAvlList,
+    currentPresc,
+    orderSummary,
+    removeItem,
+    duePrescriptions,
+    callAddToOrder,
+    discountStatus, removeOrderDiscount,
+    applyOrderDiscount,
+    mrpPostCheck,
+    qtyCheck,
+    applyOrderRefund,
+    refundCheck
+  } = props;
+  const [addedMedicines, setAddedMedicines] = React.useState(medList);
+  const [openModal, setOpenModal] = React.useState({
+    state: false,
+    type: "",
+    content: "",
+  });
+  const [unavailable, setUnavailable] = React.useState("");
+  const [unavailablePid, setUnavailablePid] = React.useState("");
+  const [unavailablePIO, setUnavailablePIO] = React.useState("");
+  const [unavailablePurl, setUnavailablePurl] = React.useState("");
+  const [snackBarState, setSnackBarState] = React.useState("");
+  const [editedPrice, setEditedPrice] = React.useState('')
+  const [editedQtyPrice, setEditedQtyPrice] = React.useState('')
+  const [editFlag, setEditFlag] = React.useState(false)
+  const [editQtyFlag, setEditQtyFlag] = React.useState(false)
+  const [editingRow, setEditingRow] = React.useState(null);
+  const [editingQtyRow, setEditingQtyRow] = React.useState(null);
+  const [showSaveChangesBtn, setShowSaveChangesBtn] = React.useState(false)
+  const [ShowSaveQtyChangesBtn, setShowSaveQtyChangesBtn] = React.useState(false)
+  const [originalPrice, setOriginalPrice] = React.useState('');
+  const [originalQuantity, setOriginalQuantity] = React.useState(null)
+  const [originalRowValue, setOriginalRowValue] = React.useState({})
+  const handleSnackBarClose = () => {
+    setSnackBarState(false);
+  };
+
+
+  //The table headers before availabilty is checked
+  const headCell1 = [
+    {
+      id: "medicineName",
+      numeric: false,
+      disablePadding: false,
+      label: "Name of the medicine",
+      sortable: true,
+      minWidth: 200,
+
+      cell: (row: any) => (
+        <Grid sx={{}}>
+          <Typography style={{ color: "rgba(0, 0, 0, 0.87)" }}>
+            {row.medicineName}
+          </Typography>
+        </Grid>
+      ),
+    },
+    {
+      id: "strength",
+      numeric: false,
+      disablePadding: false,
+      label: "Strength",
+      sortable: false,
+      minWidth: 100,
+      cell: (row: any) => (
+        <Grid sx={{ display: "flex", justifyContent: "flex-start" }}>
+          <Typography sx={{ paddingLeft: "2.5rem" }}>
+            {row.medicineStrength}
+          </Typography>
+        </Grid>
+      ),
+    },
+    {
+      id: "quantity",
+      numeric: false,
+      disablePadding: false,
+      label: "Quantity",
+      sortable: true,
+      minWidth: 20,
+
+      cell: (row: any) => (
+        <Grid sx={{ display: "flex", justifyContent: "center" }}>
+          {qtyCheck && editingQtyRow?.medicineId === row?.medicineId && editQtyFlag ? (
+            <input
+              type="number"
+              value={row.quantity}
+              style={{ width: "70px" }}
+              onChange={(e) => handleQuantityChange(e, row)}
+            />
+          ) : (
+            <Typography>{parseFloat(row.quantity).toFixed(2).toString()}</Typography>
+          )}
+          {/* <Typography>{row.quantity} </Typography> */}
+        </Grid>
+      ),
+    },
+    {
+      id: "amount",
+      numeric: false,
+      disablePadding: true,
+      label: "MRP",
+      sortable: false,
+
+      cell: (row: any) => (
+        <Grid sx={{ display: "flex", justifyContent: "center" }}>
+          {/* { (!editFlag) ? <Typography>{parseFloat(row.mrp).toFixed(2).toString()}</Typography> :
+           editingRow === row.medicineId  && <input type="number" value={row.mrp} style={{width:"70px"}} onChange={(e)=>handleNewPrice(e,row)}/>} */}
+          {mrpPostCheck && editingRow?.medicineId === row?.medicineId && editFlag ? (
+            <input
+              type="number"
+              value={row.mrp}
+              style={{ width: "70px" }}
+              onChange={(e) => handleNewPrice(e, row)}
+            />
+          ) : (
+            <Typography>{parseFloat(row.mrp).toFixed(2).toString()}</Typography>
+          )}
+        </Grid>
+      ),
+    },
+    {
+      id: "total",
+      numeric: true,
+      disablePadding: true,
+      label: "Amount",
+      sortable: false,
+
+      cell: (row: any) => (
+        <Grid sx={{ display: "flex", justifyContent: "center" }}>
+          {/* <Typography>
+            {row.total
+              ? parseFloat(row.total).toFixed(2)
+              : parseFloat(row.amount).toFixed(2)}{" "}
+          </Typography> */}
+          <Typography>
+            {(row.quantity && row.mrp)
+              ? (parseFloat(row.quantity) * parseFloat(row.mrp)).toFixed(2)
+              : "0.00"}
+          </Typography>
+
+        </Grid>
+      ),
+    },
+  ];
+  //The table headers after availabilty is checked
+  const headCell2 = [
+    {
+      id: "medicineName",
+      numeric: false,
+      disablePadding: true,
+      label: "Name of medicine",
+      sortable: true,
+      minWidth: 200,
+
+      cell: (row: any) => (
+        <Grid>
+          <Typography style={{ color: "rgba(0, 0, 0, 0.87)" }}>
+            {row.medicineName}
+          </Typography>
+          <Typography
+            sx={
+              row.availableQty >= parseInt(row.quantity)
+                ? { color: "green" }
+                : { color: "red" }
+            }
+          >
+            {row.availableQty >= parseInt(row.quantity)
+              ? "Available"
+              : "Unavailable"}
+          </Typography>
+        </Grid>
+      ),
+    },
+    {
+      id: "availableQty",
+      numeric: false,
+      //disablePadding: TextareaAutosize,
+      label: "Overall Stock",
+      sortable: false,
+      minWidth: 200,
+      cell: (row: any) => (
+        <Grid sx={{ display: "flex", justifyContent: "center" }}>
+          {row.availableQty >= parseInt(row.quantity) && (
+            <Typography>{row.availableQty}</Typography>
+          )}
+          {(row.availableQty < parseInt(row.quantity) ||
+            row.availableQty === undefined) && (
+              <Button
+                variant="outlined"
+                onClick={() => handleAddSubstitute("substitute", row)}
+              >
+                ADD SUBSTITUTE
+              </Button>
+            )}
+        </Grid>
+      ),
+    },
+    {
+      id: "quantity",
+      numeric: false,
+      disablePadding: true,
+      label: "Units Ordered",
+      sortable: true,
+
+      cell: (row: any) => (
+        <Grid sx={{ display: "flex", justifyContent: "center" }}>
+          <Typography>{row.quantity} </Typography>
+        </Grid>
+      ),
+    },
+    {
+      id: "amount",
+      numeric: false,
+      disablePadding: true,
+      label: "MRP",
+      sortable: false,
+
+      cell: (row: any) => (
+        <Grid sx={{ display: "flex", justifyContent: "center" }}>
+          {/* <Typography>{parseFloat(row.mrp).toFixed(2).toString()} </Typography> */}
+          {mrpPostCheck && editingRow?.medicineId === row?.medicineId && editFlag ? (
+            <input
+              type="number"
+              value={row.mrp}
+              style={{ width: "70px" }}
+              onChange={(e) => handleNewPrice1(e, row)}
+            />
+          ) : (
+            <Typography>{parseFloat(row.mrp).toFixed(2).toString()}</Typography>
+          )}
+        </Grid>
+      ),
+    },
+    {
+      id: "total",
+      numeric: true,
+      disablePadding: true,
+      label: "Amount",
+      sortable: false,
+
+      cell: (row: any) => (
+        <Grid sx={{ display: "flex", justifyContent: "center" }}>
+          <Typography>{(row.quantity * row.mrp).toFixed(2)} </Typography>
+        </Grid>
+      ),
+    },
+  ];
+
+  //Function implemented upon clicking ADD SUBSTITUTE button
+  const handleAddSubstitute = (type, row) => {
+    //Accepts two paramaters type and row, row contains the information of the medicine that is being substituted
+    //Type param is passed into the handleModalOpen function to open the add substitute modal
+    handleModalOpen(true, type, "");
+    //The details of unavailable medicine is stored in different states
+    setUnavailable(row.medicineId);
+    setUnavailablePid(row.prescriptionId);
+    setUnavailablePIO(row.prescriptionIssuedOn);
+    setUnavailablePurl(row.prescriptionUrl);
+  };
+  const handleModalOpen = (state, type, content) => {
+    setOpenModal({ state, type, content });
+  };
+  const handleModalClose = () => {
+    setOpenModal(false);
+  };
+
+  //Function where medicines are added according to type of the operation
+  const addMedicine = (medicine, type) => {
+    //When a user clicks ADD from the modal, the type of the modal is recorded. If the type of the modal opened was 'AddMedicine', then this code is executed
+    if (type === "addMedicine") {
+      //check if medicine exists, if not add the medicine to the list of added medicines
+      if (!addedMedicines.some((m) => m.medicineId === medicine.medicineId)) {
+        setAddedMedicines([
+          ...addedMedicines,
+          {
+            ...medicine,
+            prescriptionId: currentPresc?.prescriptionId ? currentPresc?.prescriptionId : '0',
+            prescriptionIssuedOn: currentPresc?.prescriptionIssuedOn ? currentPresc.prescriptionIssuedOn : '',
+            prescriptionUrl: currentPresc?.prescriptionUrl ? currentPresc.prescriptionUrl : '',
+          },
+        ]);
+        setSnackBarState("A new medicine has been added to the list");
+      } else {
+        //if medicine already exists, update the quantity
+        const ind = addedMedicines.findIndex(
+          (m) => m.medicineId === medicine.medicineId
+        );
+        let tempMed = addedMedicines[ind]
+        addedMedicines[ind] = {
+          ...medicine,
+          prescriptionId: tempMed.prescriptionId,
+          prescriptionIssuedOn: tempMed.prescriptionIssuedOn,
+          prescriptionUrl: tempMed.prescriptionUrl,
+        };
+        //remove the original entry from order(backend)
+        if (orderSummary.items.some((m) => m.medicineId === medicine.medicineId)) {
+          removeItem({
+            orderId: orderSummary.orderId,
+            prescriptionId: tempMed.prescriptionId,
+            medicineId: medicine.medicineId,
+          });
+        }
+        setSnackBarState("Medicine already exists, quantity has been updated");
+      }
+    }
+    //if the type of the modal opened was 'AddSubstitute', this code is executed
+    else if (type === "substitute") {
+      if (!avlList.some((m) => m.medicineId === medicine.medicineId)) {
+        setAvlList([
+          ...avlList,
+          {
+            ...medicine,
+            prescriptionId: unavailablePid,
+            prescriptionIssuedOn: unavailablePIO,
+            prescriptionUrl: unavailablePurl,
+          },
+        ]);
+        setAvlList((prev) =>
+          prev.filter((med) => med.medicineId !== unavailable)
+        );
+        if (orderSummary.items.some((m) => m.medicineId === unavailable)) {
+          removeItem({
+            orderId: orderSummary.orderId,
+            prescriptionId: unavailablePid,
+            medicineId: unavailable,
+          });
+        }
+        setSnackBarState(
+          "An alternative medicine has been added to the medicine list"
+        );
+      } else {
+        const ind = addedMedicines.findIndex(
+          (m) => m.medicineId === medicine.medicineId
+        );
+        setAvlList((prevAvlList) => {
+          // Remove the medicine with matching `medicineId` from the previous list
+          const updatedList = prevAvlList.filter((med) => med.medicineId !== unavailable);
+
+          // Check if the medicine exists in `orderSummary.items`
+          if (orderSummary.items.some((m) => m.medicineId === unavailable)) {
+            removeItem({
+              orderId: orderSummary.orderId,
+              prescriptionId: unavailablePid,
+              medicineId: unavailable,
+            });
+          }
+
+          // Add the updated medicine to the list
+          return [
+            ...updatedList,
+            {
+              ...medicine,
+              prescriptionId: unavailablePid,
+              prescriptionIssuedOn: unavailablePIO,
+              prescriptionUrl: unavailablePurl,
+            },
+          ];
+        });
+        setSnackBarState(
+          "The alternative medicine already exists, quantity has been updated"
+        );
+      }
+      // setAvlList((prev) =>
+      //   prev.filter((med) => med.medicineId !== unavailable)
+      // );
+    }
+  };
+
+  //function executed when delete icon is clicked
+  const handleDelete = (row) => {
+
+    const isEditingDeletedRow = editingRow?.medicineId === row.medicineId;
+    const isEditingQtyDeletedRow = editingQtyRow?.medicineId === row.medicineId;
+
+    //check state indicates if availability has been checked or not, if not, then medicines are removed only from the addedMedicines list
+    if (!check) {
+      setAddedMedicines(
+        addedMedicines.filter((med) => med.medicineId !== row.medicineId)
+      );
+      //if any of these medicines are in the order summary, then remove it
+      if (orderSummary.items.some((m) => m.medicineId === row.medicineId)) {
+        removeItem({
+          orderId: orderSummary.orderId,
+          prescriptionId: row.prescriptionId,
+          medicineId: row.medicineId,
+        });
+      }
+    } else {
+      //if availability is checked, these medicines are removed from both addedMedicines and avlList
+      setAvlList(avlList.filter((m) => m.medicineId !== row.medicineId));
+      setAddedMedicines(
+        addedMedicines.filter((med) => med.medicineId !== row.medicineId)
+      );
+      if (orderSummary.items.some((m) => m.medicineId === row.medicineId)) {
+        removeItem({
+          orderId: orderSummary.orderId,
+          prescriptionId: row.prescriptionId,
+          medicineId: row.medicineId,
+        });
+      }
+    }
+  };
+
+  //function executed when edit icon is clicked
+  const handleEditMRP = (row: any) => {
+    setEditFlag(true)
+    setEditingRow(row);
+    setOriginalPrice(row?.mrp)
+    setShowSaveChangesBtn(true)
+    setOriginalRowValue({ ...row, mrp: row?.mrp })
+  }
+
+  //function executed when edit icon is clicked for headCell 2
+  const handleEditMRP1 = (row: any) => {
+    setEditFlag(true)
+    setEditingRow(row);
+    setOriginalPrice(row?.mrp)
+    setShowSaveChangesBtn(true)
+    setOriginalRowValue({ ...row, mrp: row?.mrp })
+  }
+
+  // Function to handle the new price input
+  const handleNewPrice = (e: any, row: any) => {
+    console.log("Looking for medicineId:", row.medicineId);
+    console.log("Current medList:", medList);
+
+    const temp = [...medList];
+    const _medicine = temp.find(item => item.medicineId === row.medicineId);
+    _medicine.mrp = e.target.value;
+    _medicine.total = _medicine.mrp * _medicine.quantity;
+    temp.forEach(element => {
+      if (element.medicineId === _medicine.medicineId) {
+        element = _medicine;
+      }
+    });
+    setAddedMedicines(temp);
+    //setAvlList(temp)
+    setEditedPrice(e.target.value);
+  };
+
+  // Function to handle the new price input for headcell 2
+  const handleNewPrice1 = (e: any, row: any) => {
+    console.log("Looking for medicineId:", row.medicineId);
+    
+    console.log("mrp2")
+    const temp = [...avlList];
+    console.log("Current medList:", temp);
+    const _medicine = temp.find(item => item.medicineId === row.medicineId);
+    _medicine.mrp = e.target.value;
+    _medicine.total = _medicine.mrp * _medicine.quantity;
+    temp.forEach(element => {
+      if (element.medicineId === _medicine.medicineId) {
+        element = _medicine;
+      }
+    });
+    setAvlList(temp)
+    setEditedPrice(e.target.value);
+  };
+
+  //function executed when edit icon is clicked for qty
+  const handleEditQuantity = (row: any) => {
+    setEditQtyFlag(true);
+    setEditingQtyRow(row);
+    setOriginalQuantity(row?.quantity);
+    setShowSaveQtyChangesBtn(true);
+  };
+
+
+
+  // Function to handle the new price input for headcell 2
+  const handleQuantityChange = (e: any, row: any) => {
+    const newQty = parseInt(e.target.value, 10);
+    const updatedList = [...addedMedicines];
+    const medicine = updatedList.find(item => item.medicineId === row.medicineId);
+    if (medicine) {
+      medicine.quantity = newQty;
+      medicine.total = medicine.mrp * newQty;
+      setAddedMedicines(updatedList);
+    }
+  };
+
+
+
+  //function on saveChanges
+  const handleSavaChanges = () => {
+    setEditFlag(false)
+    setShowSaveChangesBtn(false)
+  }
+
+  const handleSaveQuantityChanges = () => {
+    setEditQtyFlag(false);
+    setEditingQtyRow(null);
+    setOriginalQuantity(null);
+    setShowSaveQtyChangesBtn(false);
+  };
+
+
+  //handle Cancel price changes
+  const handleCancelChanges = () => {
+    const temp = [...medList];
+    const _medicine = temp.find(item => item.medicineId === editingQtyRow.medicineId);
+    _medicine.mrp = originalPrice;
+    _medicine.total = _medicine.mrp * _medicine.quantity;
+    temp.forEach(element => {
+      if (element.medicineId === _medicine.medicineId) {
+        element = _medicine;
+      }
+    });
+    setAddedMedicines(temp);
+    //setAvlList(temp)
+    setEditFlag(false);
+    setEditingRow(null);
+    setShowSaveChangesBtn(false);
+  }
+
+  //handle Cancel price changes for headcell 2
+  const handleCancelChanges1 = () => {
+    const temp = [...avlList];
+    const _medicine = temp.find(item => item.medicineId === editingRow.medicineId);
+    _medicine.mrp = originalPrice;
+    _medicine.total = _medicine.mrp * _medicine.quantity;
+    temp.forEach(element => {
+      if (element.medicineId === _medicine.medicineId) {
+        element = _medicine;
+      }
+    });
+    setAvlList(temp)
+    setEditFlag(false);
+    setEditingRow(null);
+    setShowSaveChangesBtn(false);
+  }
+
+  //handle Cancel qty changes 
+  const handleCancelQuantityChanges = () => {
+    const temp = [...addedMedicines];
+    const _medicine = temp.find(item => item.medicineId === editingRow?.medicineId);
+    if (_medicine && originalQuantity !== null) {
+      _medicine.quantity = originalQuantity;
+      _medicine.total = _medicine.mrp * originalQuantity;
+      setAddedMedicines(temp);
+    }
+    setEditQtyFlag(false);
+    setEditingRow(null);
+    setShowSaveQtyChangesBtn(false);
+    setOriginalQuantity(null);
+  };
+
+
+  //Snackbar handling
+  const action = (
+    <IconButton
+      size="small"
+      aria-label="close"
+      color="inherit"
+      onClick={handleSnackBarClose}
+    >
+      <i className="ri-close-line"></i>
+    </IconButton>
+  );
+
+  //whenever added medicines is updated in this component, this useEffect is implemented to update the list even on the [orderID] page
+  React.useEffect(() => {
+    // updateList(addedMedicines);
+    // updateList(avlList)
+    // if (Array.isArray(addedMedicines) && addedMedicines.length > 0) {
+    //   const hasMismatch = addedMedicines.some(med => 
+    //     Number(med.amount) !== Number(med.mrp) * Number(med.quantity)
+    //   );
+
+    //   if (hasMismatch) {
+    //     updateList(addedMedicines);
+    //     return;
+    //   }
+    // }
+
+    // // Only update with avlList if it's not empty
+    // if (Array.isArray(avlList) && avlList.length > 0) {
+    //   updateList(avlList);
+    // }
+    mrpPostCheck ? updateList(avlList) : updateList(addedMedicines);
+  }, [addedMedicines, avlList]);
+
+  return (
+    <>
+      <Grid
+        xs={12}
+        sm={12}
+        md={12}
+        lg={12}
+        xl={12}
+        style={{ paddingTop: "2rem" }}
+      >
+        <Snackbar
+          anchorOrigin={{ vertical: "top", horizontal: "right" }}
+          open={snackBarState}
+          onClose={handleSnackBarClose}
+          message={snackBarState}
+          action={action}
+        />
+
+        <Grid
+          xs={12}
+          sm={12}
+          md={12}
+          lg={12}
+          xl={12}
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+          }}
+        >
+          <Grid xs={4} sm={4} md={4} lg={4} xl={4}>
+            <Typography
+              style={{
+                color: "#000000",
+                //fontFamily: "Roboto",
+                fontStyle: "normal",
+                fontWeight: 600,
+                fontSize: "16px",
+              }}
+            >
+              Medication List ({check ? avlList.length : addedMedicines.length})
+            </Typography>
+          </Grid>
+          <Grid
+            xs={8}
+            sm={8}
+            md={8}
+            lg={8}
+            xl={8}
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              columnGap: "0.5rem",
+            }}
+          >
+            {(orderSummary.status === "OPEN" ||
+              orderSummary.status === "SAVED_FOR_LATER") && (
+                <>
+                  <Button
+                    variant="contained"
+                    style={{
+                      borderRadius: "4px",
+                      backgroundColor: "#FFFFFF",
+                      color: "#034EA1",
+                      border: "1px solid #034EA1",
+                      textTransform: "capitalize",
+                      boxShadow: "none",
+                      //padding: 0,
+                      paddingLeft: "0.5rem",
+                      paddingRight: "0.5rem",
+                      //fontFamily: "Roboto",
+                      fontStyle: "normal",
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      lineHeight: "22px",
+                    }}
+                    onClick={() => handleModalOpen(true, "refill", "")}
+                  //disabled
+                  >
+                    View near due refill prescriptions
+                  </Button>
+
+                  <Button
+                    variant="contained"
+                    style={{
+                      borderRadius: "4px",
+                      //padding: 0,
+                      paddingLeft: "0.5rem",
+                      paddingRight: "0.5rem",
+                      boxShadow: "none",
+                      //fontFamily: "Roboto",
+                      fontStyle: "normal",
+                      fontWeight: 500,
+                      fontSize: "14px",
+                      lineHeight: "22px",
+                    }}
+                    onClick={() => handleModalOpen(true, "addMedicine", "")}
+                    disabled={check || (prescriptions.length === 0 && addedMedicines.length !== 0)}
+                  >
+                    + ADD MEDICINE
+                  </Button>
+                </>
+              )}
+          </Grid>
+        </Grid>
+
+        {(addedMedicines.length === 0 ||
+          orderSummary.status === "REJECTED") && (
+            <Box
+              style={{
+                width: "100%",
+                height: "23rem",
+                backgroundColor: "#E6E9EC",
+                marginTop: "1rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontStyle: "normal",
+                fontWeight: 600,
+                fontSize: "1.25rem",
+                color: "rgba(0, 0, 0, 0.2)",
+              }}
+            >
+              {orderSummary.status !== "REJECTED" && (
+                <Typography>No medicines added yet</Typography>
+              )}
+              {orderSummary.status === "REJECTED" && (
+                <Grid
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Box
+                    sx={{
+                      position: "relative",
+                      width: "6rem",
+                      height: "6rem",
+                    }}
+                  >
+                    <Image
+                      src="images/rejected.svg"
+                      fill
+                      style={{ objectFit: "cover" }}
+                      alt="logo"
+                    />
+                  </Box>
+                  <Typography>
+                    The order was rejected due to {orderSummary?.rejectionReason}.
+                  </Typography>
+                </Grid>
+              )}
+            </Box>
+          )}
+        {addedMedicines.length !== 0 &&
+          orderSummary.status !== "REJECTED" &&
+          !check && (
+            <Box
+              style={{
+                width: "100%",
+                height: "25rem",
+                overflow: "auto",
+                //marginBottom: "3rem",
+                marginTop: "0.5rem",
+              }}
+            >
+              <MedicineList
+                list={[...addedMedicines]}
+                headCell={headCell1}
+                onDelete={handleDelete}
+
+                onEditMRP={handleEditMRP}
+                showSaveChangesBtn={showSaveChangesBtn}
+                handleCancelChanges={handleCancelChanges}
+                onSaveChanges={handleSavaChanges}
+                status={orderSummary?.status}
+                orderSummary={orderSummary}
+                mrpPostCheck={mrpPostCheck}
+                applyOrderRefund={applyOrderRefund}
+
+                onEditQty={handleEditQuantity}
+                showSaveQtyChangesBtn={ShowSaveQtyChangesBtn}
+                handleCancelQtyChanges={handleCancelQuantityChanges}
+                onSaveQtyChanges={handleSaveQuantityChanges}
+                qtyCheck={qtyCheck}
+              />
+            </Box>
+          )}
+        {avlList.length !== 0 && check && (
+          <Box
+            style={{
+              width: "100%",
+              height: "100%",
+              overflow: "auto",
+              //marginBottom: "3rem",
+              marginTop: "0.5rem",
+            }}
+          >
+            <MedicineList
+              list={[...avlList]}
+              headCell={headCell2}
+              onDelete={handleDelete}
+              onEditMRP={handleEditMRP1}
+              showSaveChangesBtn={showSaveChangesBtn}
+              onSaveChanges={handleSavaChanges}
+              handleCancelChanges={handleCancelChanges1}
+              status={orderSummary?.status}
+              avlCheck={check}
+              discountStatus={discountStatus}
+              removeOrderDiscount={removeOrderDiscount}
+              applyOrderDiscount={applyOrderDiscount}
+              orderSummary={orderSummary}
+              mrpPostCheck={mrpPostCheck}
+            />
+          </Box>
+        )}
+      </Grid>
+      {openModal.state && (
+        <MedicineModal
+          modalClose={handleModalClose}
+          addMedicine={addMedicine}
+          orderSummary={orderSummary}
+          type={openModal.type}
+          content={openModal.content}
+          duePrescriptions={duePrescriptions}
+          callAddToOrder={callAddToOrder}
+          currentPrescription={currentPresc}
+        />
+      )}
+    </>
+  );
+};
+
+export default AddMedicine;
+
+import {
+  Box,
+  Button,
+  InputLabel,
+  TextField,
+  Typography,
+  Divider,
+} from "@mui/material";
+import Head from "next/head";
+import React from "react";
+import { Grid } from "@mui/material";
+import Link from "next/link";
+import MedicineModal from "../MedicineModal";
+import theme from "@/theme";
+
+const BottomButton = (props: any) => {
+  const {
+    buttonText,
+    link,
+    disable,
+    state,
+    addedMedicines,
+    onClickCA,
+    check,
+    avlList,
+    onClickAO,
+    onClickRO,
+    approved,
+    orderSummary,
+    onClickSD,
+    onClickMAP,
+    onClickMAD,
+    onClickCP,
+    onClickMAID,
+    onClickRST,
+    onClickPL
+  } = props;
+
+  const [openModal, setOpenModal] = React.useState(false);
+  const [disableApprove, setDisableApprove] = React.useState(false);
+  // const handleModalOpen = () => {
+  //   setOpenModal(true);
+  // };
+  // const handleModalClose = () => {
+  //   setOpenModal(false);
+  // };
+
+  React.useEffect(() => {
+    setDisableApprove(false);
+    avlList.map((med) => {
+      if (med.availableQty < med.quantity || med.availableQty === undefined) {
+        setDisableApprove(true);
+      }
+    });
+  }, [avlList]);
+
+  return (
+    <>
+      <Box
+        style={{
+          position: "sticky",
+          bottom: 0,
+          background: theme.palette.primary.light,
+          width: "100%",
+          padding: "0.5rem 1rem 0 0",
+          boxShadow: "0rem -0.125rem 0.125rem rgba(0, 0, 0, 0.1)",
+          //marginTop:'0.25rem',
+          //background:'blue'
+        }}
+      >
+        <Box
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            columnGap: "2rem",
+            alignItems: "flex-end",
+            //backgroundColor: "red",
+            justifyContent: "flex-end",
+            zIndex: 2,
+            padding: "0 0 0.5rem 0",
+            margin: 0,
+            //background:'pink'
+          }}
+        >
+          {!approved &&
+            orderSummary.status !== "PAYMENT_COMPLETED" &&
+            orderSummary.status !== "OUT_STATION_DELIVERY" &&
+            orderSummary.status !== "PICKUP_CANCELLED" &&
+            orderSummary.status !== "OUT_FOR_PICKUP" && 
+            orderSummary.status !== "OUT_FOR_DELIVERY" &&
+            orderSummary.status !== "INTERNALLY_DELIVERED" && (
+              <Button
+                style={{
+                  color: "#D32F2F",
+                  fontStyle: "normal",
+                  fontWeight: 600,
+                  fontSize: "0.938rem",
+                  margin: 0,
+                }}
+                onClick={onClickRO}
+              >
+                REJECT ORDER
+              </Button>
+            )}
+
+          {!approved &&
+            orderSummary.status !== "PAYMENT_COMPLETED" &&
+            orderSummary.status !== "OUT_STATION_DELIVERY" &&
+            orderSummary.status !== "PICKUP_CANCELLED" &&
+            orderSummary.status !== "OUT_FOR_PICKUP" && 
+            orderSummary.status !== "OUT_FOR_DELIVERY" && 
+            orderSummary.status !== "INTERNALLY_DELIVERED" && 
+            (
+              <Button
+                variant="contained"
+                style={{
+                  borderRadius: "0.25rem",
+                  backgroundColor: "#FFFFFF",
+                  color: "#034EA1",
+                  border: "0.063rem solid #034EA1",
+                  fontFamily: "Roboto",
+                  fontStyle: "normal",
+                  fontWeight: 600,
+                  fontSize: "0.938rem",
+                  boxShadow: "none",
+                  margin: 0,
+                }}
+                onClick={onClickSD}
+              >
+                DRAFT RX
+              </Button>
+            )}
+
+          {orderSummary.status !== "PAYMENT_COMPLETED" &&
+            orderSummary.status !== "OUT_STATION_DELIVERY" &&
+            orderSummary.status !== "PICKUP_CANCELLED" &&
+            orderSummary.status !== "OUT_FOR_PICKUP" && 
+            orderSummary.status !== "OUT_FOR_DELIVERY" &&
+            orderSummary.status !== "INTERNALLY_DELIVERED" && (
+              <Button
+                variant="contained"
+                disabled={
+                  addedMedicines.length === 0 ||
+                  // approved || //commented for rework as it was disabling sometime
+                  disableApprove ||
+                  (check && avlList.length === 0)
+                }
+                style={{
+                  borderRadius: "0.25rem",
+                  boxShadow:
+                    "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
+                  fontFamily: "Roboto",
+                  fontStyle: "normal",
+                  fontWeight: 600,
+                  fontSize: "0.938rem",
+                  margin: 0,
+                }}
+                onClick={check ? onClickAO : onClickCA}
+              >
+                {check ? "APPROVE ORDER" : "CHECK AVAILABILITY"}
+              </Button>
+            )}
+          {orderSummary.status === "PAYMENT_COMPLETED" && (
+            <Box>
+              <Button
+                variant="contained"
+                style={{
+                  borderRadius: "0.25rem",
+                  boxShadow:
+                    "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
+                  fontFamily: "Roboto",
+                  fontStyle: "normal",
+                  fontWeight: 600,
+                  fontSize: "0.938rem",
+                  //boxShadow: "none",
+                }}
+                onClick={onClickMAP}
+              >
+                MARK AS PACKED
+              </Button>
+            </Box>
+          )}
+          {(orderSummary.status === "PAYMENT_COMPLETED" || orderSummary.status === 'INTERNALLY_DELIVERED') && (
+            <Button
+              variant="outlined"
+              style={{
+                borderRadius: "0.25rem",
+                boxShadow:
+                  "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
+                fontFamily: "Roboto",
+                fontStyle: "normal",
+                fontWeight: 600,
+                fontSize: "0.938rem",
+                //boxShadow: "none",
+                marginLeft: '0.5rem'
+              }}
+              onClick={onClickPL}
+            >
+              PRINT LABEL
+            </Button>)
+          }
+          {orderSummary.status === "OUT_STATION_DELIVERY" && (
+            <Button
+              variant="contained"
+              style={{
+                borderRadius: "0.25rem",
+                boxShadow:
+                  "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
+                fontFamily: "Roboto",
+                fontStyle: "normal",
+                fontWeight: 600,
+                fontSize: "0.938rem",
+                //boxShadow: "none",
+              }}
+              onClick={onClickMAD}
+            >
+              {/* MARK AS DELIVERED */}
+              CHOOSE ALTERNATE DELIVERY
+            </Button>
+          )}
+
+          {orderSummary.status === "OUT_FOR_DELIVERY" && (
+            <>
+              <Button
+                style={{
+                  color: "#D32F2F",
+                  fontStyle: "normal",
+                  fontWeight: 600,
+                  fontSize: "0.938rem",
+                  margin: 0,
+                }}
+                onClick={onClickRST}
+              >
+                RAISE SUPPORT TICKET
+              </Button>
+              {/* <Button
+                variant="contained"
+                style={{
+                  borderRadius: "0.25rem",
+                  boxShadow:
+                    "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
+                  fontFamily: "Roboto",
+                  fontStyle: "normal",
+                  fontWeight: 600,
+                  fontSize: "0.938rem",
+                  //boxShadow: "none",
+                }}
+                onClick={onClickCP}
+              >
+                CANCEL PICKUP
+              </Button> */}
+            </>
+          )}
+
+          {orderSummary.status === "OUT_FOR_PICKUP" && (
+            <>
+              <Button
+                style={{
+                  color: "#D32F2F",
+                  fontStyle: "normal",
+                  fontWeight: 600,
+                  fontSize: "0.938rem",
+                  margin: 0,
+                }}
+                onClick={onClickRST}
+              >
+                RAISE SUPPORT TICKET
+              </Button>
+              <Button
+                variant="contained"
+                style={{
+                  borderRadius: "0.25rem",
+                  boxShadow:
+                    "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
+                  fontFamily: "Roboto",
+                  fontStyle: "normal",
+                  fontWeight: 600,
+                  fontSize: "0.938rem",
+                  //boxShadow: "none",
+                }}
+                onClick={onClickCP}
+              >
+                CANCEL PICKUP
+              </Button>
+            </>
+          )}
+
+          {orderSummary.status === "PICKUP_CANCELLED" && (
+            <Button
+              variant="contained"
+              style={{
+                borderRadius: "0.25rem",
+                boxShadow:
+                  "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
+                fontFamily: "Roboto",
+                fontStyle: "normal",
+                fontWeight: 600,
+                fontSize: "0.938rem",
+                //boxShadow: "none",
+              }}
+              onClick={onClickMAID}
+            >
+              {/* MARK AS INTERNALLY DELIVERED */}
+              CHOOSE ALTERNATE DELIVERY
+            </Button>
+          )}
+        </Box>
+      </Box>
+    </>
+  );
+};
+
+export default BottomButton;
+
+import {
+  Box,
+  IconButton,
+  Grid,
+  Typography,
+  TextareaAutosize,
+  Menu,
+  MenuItem,
+  OutlinedInput,
+} from "@mui/material";
+import React from "react";
+import { HeadCell } from "./table/table";
+import PaginatedTable from "./table/PaginatedTable";
+import { orderList } from "src/modules/mockData";
+{
+  /* 
+This is the table that holds all added medicines
+*/
+}
+
+
+const MedicineList = (props) => {
+  const {
+    list,
+    headCell,
+    onDelete,
+    onEditMRP,
+    showSaveChangesBtn,
+    handleCancelChanges,
+    onSaveChanges,
+    mrpPostCheck,
+    applyOrderRefund,
+    onEditQty,
+    showSaveQtyChangesBtn,
+    handleCancelQtyChanges,
+    onSaveQtyChanges,
+    qtyCheck,
+    status,
+    orderSummary,
+    avlCheck,
+    discountStatus,
+    removeOrderDiscount,
+    applyOrderDiscount,
+    refundCheck
+
+  } = props;
+
+  const tableRef: any = React.useRef();
+  const [loader, setLoader] = React.useState<boolean>(false);
+  const [totalRecords, setTotalRecords] = React.useState<number>(0);
+  const [pageNumberClicked, setPageNumberClicked] = React.useState<string>("1");
+  const [recordsToShow, setRecordsToShow] = React.useState<number>(10);
+  const [discountButton, setDiscountButton] = React.useState<boolean>(false);
+
+  const icon = {
+    id: (Object.keys(list).length + 1).toString(),
+    numeric: false,
+    disablePadding: true,
+    label: "",
+    sortable: false,
+    stickyClass: "stickyRight",
+    minWidth: 20,
+    cell: (row: any) => (
+      <div style={{ display: "flex", flexDirection: "row" }}>
+        {mrpPostCheck && (
+          <IconButton onClick={() => onEditMRP(row)}>
+            <i className="ri-pencil-fill" style={{ fontSize: "1rem" }}></i>
+          </IconButton>
+        )}
+        {qtyCheck && (
+          <IconButton onClick={() => onEditQty(row)}>
+            <i className="ri-pencil-fill" style={{ fontSize: "1rem" }}></i>
+          </IconButton>
+        )}
+        <IconButton onClick={() => onDelete(row)}>
+          <i className="ri-delete-bin-6-line" style={{ fontSize: "1rem" }}></i>
+        </IconButton>
+      </div>
+    ),
+  };
+
+  if (
+    headCell.length === 5 &&
+    (status === "OPEN" || status === "SAVED_FOR_LATER")
+  ) {
+    headCell.push(icon);
+  }
+
+  const headCells: readonly HeadCell[] = headCell;
+
+  React.useEffect(() => {
+    setDiscountButton(true);
+    let total = 0;
+    list.forEach((med) => {
+      total += parseFloat(med.quantity) * parseFloat(med.mrp);
+      if (med.availableQty < med.quantity || med.availableQty === undefined) {
+        setDiscountButton(false);
+      }
+    });
+  }, [list]);
+
+  return (
+    <Box sx={{ width: "100%", height: "100%" }}>
+      <PaginatedTable
+        totalLength={totalRecords !== 0 && totalRecords}
+        setPageNumberClicked={setPageNumberClicked}
+        setRecordsToShow={setRecordsToShow}
+        uniqueKey="medicineId"
+        rows={list}
+        headCells={headCells}
+        tableRef={tableRef}
+        loading={loader}
+        pagination={false}
+        showTotal
+        avlCheck={avlCheck}
+        discountButton={discountButton}
+        discountStatus={discountStatus}
+        removeOrderDiscount={removeOrderDiscount}
+        applyOrderDiscount={applyOrderDiscount}
+        orderSummary={orderSummary}
+        showSaveChangesBtn={showSaveChangesBtn}
+        onSaveChanges={onSaveChanges}
+        handleCancelChanges={handleCancelChanges}
+        applyOrderRefund={applyOrderRefund}
+        showSaveQtyChangesBtn={showSaveQtyChangesBtn}
+        onSaveQtyChanges={onSaveQtyChanges}
+        handleCancelQtyChanges={handleCancelQtyChanges}
+        refundCheck = {refundCheck}
+
+      />
+    </Box>
+  );
+};
+
+export default MedicineList;
+
+/* eslint-disable import/no-extraneous-dependencies */
+import * as React from "react";
+import ReactDOMServer from "react-dom/server";
+import {
+  FormControl,
+  Typography,
+  Table,
+  TableContainer,
+  TableBody,
+  TableRow,
+  TableCell,
+  Box,
+  Paper,
+  MenuItem,
+  Pagination,
+  Select,
+  SelectChangeEvent,
+  Checkbox,
+  CircularProgress,
+  styled,
+  Button,
+  Modal,
+  Stack,
+} from "@mui/material";
+import styles from "./style.module.scss";
+import { Order, EnhancedTableProps, PaginatedTableProps } from "./table";
+import EnhancedTableHead from "./head";
+import Row from "./collapsible_row";
+import { getComparator, getSum, Item, stableSort } from "./helpers";
+import EnhancedTableToolbar from "./toolbar";
+import HtmlTable from "./html_table";
+import NoData from "../NoData";
+import theme from "@/theme";
+
+const PaginatedTable = (props: PaginatedTableProps) => {
+  const [order, setOrder] = React.useState<Order>("asc");
+  const [orderBy, setOrderBy] = React.useState<string>("");
+  const [selected, setSelected] = React.useState<readonly string[]>([]);
+  const [page, setPage] = React.useState(0);
+  const [totalColSpan, setTotalColSpan] = React.useState(0);
+  const [rowsPerPage, setRowsPerPage] = React.useState<any>(10);
+  const [htmlTable, setHtmlTable] = React.useState("");
+  const [isPrintClicked, setPrintClicked] = React.useState(false);
+  const [isExcelClicked, setExcelClicked] = React.useState(false);
+
+  const [open, setOpen] = React.useState(false);
+  const [openQtyModal, setOpenQtyModal] = React.useState(false);
+  const handleOpen = () => setOpen(true);
+  const handleClose = () => setOpen(false);
+  const handleOpenQtyModal = () => setOpenQtyModal(true);
+  const handleCloseQtyModal = () => setOpenQtyModal(false);
+
+
+  const {
+    expandable,
+    expandInCols,
+    serialNo,
+    rows,
+    headCells,
+    pagination,
+    expandIconAt,
+    selectable,
+    uniqueKey,
+    actions,
+    loading,
+    tableRef,
+    tableTitle,
+    excelFileName,
+    order: orderProps,
+    orderBy: orderByProps,
+    showTotal,
+    totalLength,
+    setPageNumberClicked,
+    setRecordsToShow,
+    customRowPerPage,
+    serialNoName,
+    avlCheck,
+    discountButton,
+    discountStatus,
+    removeOrderDiscount,
+    applyOrderDiscount,
+    orderSummary,
+    showSaveChangesBtn,
+    onSaveChanges,
+    handleCancelChanges,
+    applyOrderRefund,
+    showSaveQtyChangesBtn,
+    onSaveQtyChanges,
+    handleCancelQtyChanges,
+    refundCheck
+  } = props;
+
+  const lengthOfData: any = totalLength || rows.length;
+
+  React.useEffect(() => {
+    if (customRowPerPage) {
+      setRecordsToShow && setRecordsToShow(customRowPerPage);
+      setRowsPerPage(customRowPerPage);
+    } else {
+      setRecordsToShow && setRecordsToShow(rowsPerPage);
+    }
+  }, [rowsPerPage]);
+
+  React.useEffect(() => {
+    setTotalColSpan(
+      1 +
+      (selectable ? 1 : 0) +
+      (serialNo ? 1 : 0) +
+      (expandIconAt === "start" ? 1 : 0)
+    );
+  }, [showTotal]);
+
+  React.useEffect(() => {
+    if (orderProps) setOrder(orderProps);
+  }, [orderProps]);
+
+  React.useEffect(() => {
+    if (orderByProps) setOrderBy(orderByProps);
+  }, [orderByProps]);
+
+  const rowsPerPageDropdown: Array<{ page: number; label: string }> = [
+    { page: 5, label: "5" },
+    { page: 10, label: "10" },
+    { page: 15, label: "15" },
+    { page: 25, label: "25" },
+    { page: 50, label: "50" },
+    {
+      page: totalLength ? 100 : rows?.length,
+      label: totalLength ? "100" : "All",
+    },
+  ];
+
+  React.useEffect(() => {
+    if (headCells && rows) {
+      const htmlTableSample = ReactDOMServer.renderToString(
+        <HtmlTable
+          headCells={headCells}
+          rows={rows}
+          uniqueKey={uniqueKey}
+          title={tableTitle}
+        />
+      );
+      setHtmlTable(htmlTableSample);
+    }
+  }, [rows, headCells]);
+
+  React.useEffect(() => {
+    if (isPrintClicked) {
+      const printWindow = window.open("", "", "width=800,height=600");
+      if (printWindow) {
+        printWindow.document.write(htmlTable);
+        printWindow.document.close();
+        setTimeout(() => {
+          printWindow.focus();
+          printWindow.print();
+        }, 500);
+      }
+    }
+  }, [isPrintClicked]);
+
+  const base64 = (s: any) => window.btoa(unescape(encodeURIComponent(s)));
+
+  React.useEffect(() => {
+    if (isExcelClicked) {
+      const uri = "data:application/vnd.ms-excel;base64,";
+      const template = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>${excelFileName}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--><meta http-equiv="content-type" content="text/plain; charset=UTF-8"/></head><body>
+      ${htmlTable}
+      </body></html>`;
+      const a = window.document.createElement("a");
+      a.href = uri + base64(template);
+      a.download = `${excelFileName}.xls`;
+      a.click();
+    }
+  }, [isExcelClicked]);
+
+  const print = () => {
+    setPrintClicked(true);
+  };
+
+  const exportToExcel = () => {
+    setExcelClicked(true);
+  };
+
+  React.useEffect(() => {
+    if (tableRef) tableRef.current = { print, exportToExcel };
+  }, []);
+
+  React.useEffect(() => {
+    !totalLength && setPage(0);
+    if (!pagination) setRowsPerPage(lengthOfData);
+  }, [rows, pagination]);
+
+  const handleRequestSort = (
+    event: React.MouseEvent<unknown>,
+    property: string
+  ) => {
+    const isAsc = orderBy === property && order === "asc";
+    setOrder(isAsc ? "desc" : "asc");
+    setOrderBy(property);
+  };
+
+  const handleSelectAllClick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.checked) {
+      const newSelecteds = rows.map((n) => n[uniqueKey].toString());
+      setSelected(newSelecteds);
+      return;
+    }
+    setSelected([]);
+  };
+
+  const handleChangePage = (event: unknown, newPage: number) => {
+    setPage(newPage - 1);
+    setPageNumberClicked && setPageNumberClicked(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: SelectChangeEvent) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setRecordsToShow && setRecordsToShow(parseInt(event.target.value, 10));
+    !totalLength && setPage(0);
+  };
+
+  const handleClick = (event: React.MouseEvent<unknown>, name: string) => {
+    const selectedIndex = selected.indexOf(name);
+    let newSelected: readonly string[] = [];
+
+    if (selectedIndex === -1) {
+      newSelected = newSelected.concat(selected, name);
+    } else if (selectedIndex === 0) {
+      newSelected = newSelected.concat(selected.slice(1));
+    } else if (selectedIndex === selected.length - 1) {
+      newSelected = newSelected.concat(selected.slice(0, -1));
+    } else if (selectedIndex > 0) {
+      newSelected = newSelected.concat(
+        selected.slice(0, selectedIndex),
+        selected.slice(selectedIndex + 1)
+      );
+    }
+    setSelected(newSelected);
+  };
+
+  const isSelected = (name: string) => selected.indexOf(name) !== -1;
+
+  // Avoid a layout jump when reaching the last page with empty rows.
+  const emptyRows =
+    page > 0 ? Math.max(0, (1 + page) * rowsPerPage - lengthOfData) : 0;
+
+
+  const style = {
+    position: "absolute" as "absolute",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    width: 600,
+    bgcolor: "background.paper",
+    boxShadow: 24,
+    p: 4,
+  };
+
+  return (
+    <Box sx={{ width: "100%" }}>
+      {selected.length > 0 && (
+        <EnhancedTableToolbar
+          actions={actions}
+          selected={selected}
+          numSelected={selected.length}
+        />
+      )}
+      <Paper
+        elevation={2}
+        sx={{
+          borderRadius: ".5rem",
+          boxShadow: "none",
+          border: "1px solid #ECECEC",
+        }}
+      >
+        <TableContainer sx={{ borderRadius: ".5rem" }}>
+          <Table sx={{ minWidth: 750 }} size="small" stickyHeader>
+            <EnhancedTableHead
+              order={order}
+              orderBy={orderBy}
+              onRequestSort={handleRequestSort}
+              headCells={headCells}
+              serialNo={serialNo}
+              expandIconAt={expandIconAt}
+              selectable={selectable}
+              onSelectAllClick={handleSelectAllClick}
+              numSelected={selected.length}
+              rowCount={lengthOfData}
+              serialNoName={serialNoName}
+            />
+            <TableBody>
+              {/* if you don't need to support IE11, you can replace the `stableSort` call with:
+              rows.slice().sort(getComparator(order, orderBy)) */}
+              {totalLength &&
+                stableSort(rows, getComparator(order, orderBy)).map(
+                  (row, index) => {
+                    const isItemSelected: any = isSelected(
+                      row[uniqueKey]?.toString()
+                    );
+                    return expandable ? (
+                      <Row
+                        key={`${page * rowsPerPage + index + 1}`}
+                        row={row}
+                        headCells={headCells}
+                        expand={expandable}
+                        expandInCols={expandInCols}
+                        expandIconAt={expandIconAt}
+                        serialNo={
+                          serialNo ? page * rowsPerPage + index + 1 : undefined
+                        }
+                        selectable={
+                          selectable && (
+                            <TableCell
+                              className={styles.stickyLeft}
+                              key={`checkbox-${index + 1}`}
+                              padding="checkbox"
+                              sx={{ p: "1rem", left: 0, textAlign: "center" }}
+                            >
+                              <Checkbox
+                                color="primary"
+                                checked={isItemSelected}
+                                onClick={(event) =>
+                                  handleClick(event, row[uniqueKey].toString())
+                                }
+                              />
+                            </TableCell>
+                          )
+                        }
+                      />
+                    ) : (
+                      <TableRow key={`${page * rowsPerPage + index + 1}`}>
+                        {selectable && (
+                          <TableCell padding="checkbox" sx={{ p: "1rem" }}>
+                            <Checkbox
+                              color="primary"
+                              checked={isItemSelected}
+                              onClick={(event) =>
+                                handleClick(event, row[uniqueKey].toString())
+                              }
+                            />
+                          </TableCell>
+                        )}
+                        {serialNo && (
+                          <TableCell>
+                            {page * rowsPerPage + index + 1}
+                          </TableCell>
+                        )}
+                        {headCells.map((headCell) => (
+                          <TableCell
+                            className={
+                              headCell.stickyClass
+                                ? styles[headCell.stickyClass]
+                                : ""
+                            }
+                            sx={{
+                              fontSize: "0.875rem",
+                              left: headCell.stickyAt,
+                              right: headCell.stickyAt,
+                              padding: "2rem",
+                            }}
+                            key={headCell.id}
+                          >
+                            {headCell.cell
+                              ? headCell.cell(row)
+                              : row[headCell.id]}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    );
+                  }
+                )}
+              {!totalLength &&
+                stableSort(rows, getComparator(order, orderBy))
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((row, index) => {
+                    const isItemSelected: any = isSelected(
+                      row[uniqueKey]?.toString()
+                    );
+                    return expandable ? (
+                      <Row
+                        key={`${page * rowsPerPage + index + 1}`}
+                        row={row}
+                        headCells={headCells}
+                        expand={expandable}
+                        expandInCols={expandInCols}
+                        expandIconAt={expandIconAt}
+                        serialNo={
+                          serialNo ? page * rowsPerPage + index + 1 : undefined
+                        }
+                        selectable={
+                          selectable && (
+                            <TableCell
+                              className={styles.stickyLeft}
+                              key={`checkbox-${index + 1}`}
+                              padding="checkbox"
+                              sx={{ p: "1rem", left: 0, textAlign: "center" }}
+                            >
+                              <Checkbox
+                                color="primary"
+                                checked={isItemSelected}
+                                onClick={(event) =>
+                                  handleClick(event, row[uniqueKey].toString())
+                                }
+                              />
+                            </TableCell>
+                          )
+                        }
+                      />
+                    ) : (
+                      <TableRow
+                        key={`${page * rowsPerPage + index + 1}`}
+                        sx={
+                          index % 2 === 0
+                            ? { backgroundColor: "rgba(0, 0, 0, 0.02)" }
+                            : {}
+                        }
+                      >
+                        {selectable && (
+                          <TableCell padding="checkbox" sx={{ p: "1rem" }}>
+                            <Checkbox
+                              color="primary"
+                              checked={isItemSelected}
+                              onClick={(event) =>
+                                handleClick(event, row[uniqueKey].toString())
+                              }
+                            />
+                          </TableCell>
+                        )}
+                        {serialNo && (
+                          <TableCell>
+                            {page * rowsPerPage + index + 1}
+                          </TableCell>
+                        )}
+                        {headCells.map((headCell, i) => (
+                          <TableCell
+                            className={
+                              headCell.stickyClass
+                                ? styles[headCell.stickyClass]
+                                : ""
+                            }
+                            sx={{
+                              fontSize: "0.875rem",
+                              left: headCell.stickyAt,
+                              right: headCell.stickyAt,
+                              pl: 1,
+                            }}
+                            key={headCell.id}
+                          >
+                            {headCell.cell
+                              ? headCell.cell(row)
+                              : row[headCell.id]}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    );
+                  })}
+              {emptyRows > 0 && (
+                <TableRow
+                  style={{
+                    height: 53 * emptyRows,
+                  }}
+                  sx={{
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  <TableCell colSpan={headCells.length} />
+                </TableRow>
+              )}
+              {!loading && lengthOfData <= 0 && (
+                <TableRow
+                  style={{
+                    height: 53 * 5,
+                  }}
+                  sx={{
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  <TableCell
+                    colSpan={headCells.length}
+                    sx={{ textAlign: "center" }}
+                  >
+                    <NoData
+                      //image="images/no-data.png"
+                      image="images/NoData.png"
+                      msgHead="No Data Available"
+                      msgSubHead=""
+                    />
+                  </TableCell>
+                </TableRow>
+              )}
+              {loading && rows.length <= 0 && (
+                <TableRow
+                  sx={{
+                    fontSize: "0.875rem",
+                    height: 53 * 3,
+                  }}
+                >
+                  <TableCell
+                    colSpan={
+                      headCells.length +
+                      (serialNo ? 1 : 0) +
+                      (expandable ? 1 : 0)
+                    }
+                    sx={{ textAlign: "center" }}
+                  >
+                    <CircularProgress />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!pagination && showTotal && (
+                <TableRow
+                  sx={{
+                    backgroundColor: (theme) => theme.palette.grey[50],
+                    alignItems: "center",
+                    borderRadius: "0 0 0.5rem 0.5rem",
+                  }}
+                >
+                  <TableCell
+                    colSpan={totalColSpan + 1}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      width: "350px",
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        textAlign: "left",
+                        fontWeight: 700,
+                        color: "#000",
+                        mr: 2,
+                      }}
+                    >
+                      Total Amount
+                    </Typography>
+                    {(orderSummary?.status === "OPEN" || orderSummary?.status === "SAVED_FOR_LATER") && avlCheck && discountButton &&
+                      (<Button
+                        //disabled={}
+                        variant="contained"
+                        onClick={
+                          discountStatus
+                            ? removeOrderDiscount
+                            : applyOrderDiscount
+                        }
+                        sx={{
+                          textAlign: "left",
+                          color: "#fff",
+                          textTransform: "capitalize",
+                          p: 0.9,
+                          width: "175px",
+                        }}
+                      >
+                        {discountStatus ? "Remove Discount" : "Apply Discount"}
+                      </Button>)
+                    }
+                    {
+                      ((orderSummary?.status === "PAYMENT_COMPLETED" || orderSummary?.status === "INTERNALLY_DELIVERED") && orderSummary?.isRefundable==false) && (
+                        <Button
+                          variant="contained"
+                          sx={{
+                            textAlign: "left",
+                            color: "#fff",
+                            textTransform: "capitalize",
+                            p: 0.9,
+                            width: "175px",
+                          }}
+                          onClick={applyOrderRefund}
+                        >
+                          INTIATE REFUND
+                        </Button>
+                      )
+                    }
+
+                    {
+                      showSaveChangesBtn &&
+                      <Button
+                        variant="contained"
+                        sx={{
+                          textAlign: "left",
+                          color: "#fff",
+                          textTransform: "capitalize",
+                          p: 0.9,
+                          width: "175px"
+                        }}
+                        onClick={handleOpen}
+                      >SAVE CHANGES
+                      </Button>
+                    }
+                    {
+                    /* Open modal to confirm for save price changes */}
+                    <Modal
+                      open={open}
+                      onClose={handleClose}
+                      aria-labelledby="modal-modal-title"
+                      aria-describedby="modal-modal-description"
+                      sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+                    >
+                      <Box sx={style}>
+                        <Typography id="modal-modal-title" variant="h6" component="h2">
+                          Do you want to update the MRP?
+                        </Typography>
+                        <Stack spacing={2} direction="row" sx={{ mt: 1, float: "right" }}>
+                          <Button onClick={() => { setOpen(false); handleCancelChanges() }}>
+                            CANCEL
+                          </Button>
+                          <Button variant="contained" onClick={() => { setOpen(false); onSaveChanges() }}
+                            style={{ borderRadius: "0.25rem", boxShadow: "none" }}
+                          >
+                            CONFIRM
+                          </Button>
+                        </Stack>
+                      </Box>
+                    </Modal>
+
+                    {
+                      showSaveQtyChangesBtn && (
+                        <Button
+                          variant="contained"
+                          sx={{
+                            textAlign: "left",
+                            color: "#fff",
+                            textTransform: "capitalize",
+                            p: 0.9,
+                            width: "175px"
+                          }}
+                          onClick={handleOpenQtyModal}
+                        >
+                          SAVE QUANTITY
+                        </Button>
+                      )
+                    }
+
+                    <Modal
+                      open={openQtyModal}
+                      onClose={handleCloseQtyModal}
+                      aria-labelledby="modal-qty-title"
+                      aria-describedby="modal-qty-description"
+                      sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+                    >
+                      <Box sx={style}>
+                        <Typography id="modal-qty-title" variant="h6" component="h2">
+                          Do you want to update the quantity?
+                        </Typography>
+                        <Stack spacing={2} direction="row" sx={{ mt: 1, float: "right" }}>
+                          <Button onClick={() => { setOpenQtyModal(false); handleCancelQtyChanges(); }}>
+                            CANCEL
+                          </Button>
+                          <Button
+                            variant="contained"
+                            onClick={() => { setOpenQtyModal(false); onSaveQtyChanges(); }}
+                            style={{ borderRadius: "0.25rem", boxShadow: "none" }}
+                          >
+                            CONFIRM
+                          </Button>
+                        </Stack>
+                      </Box>
+                    </Modal>
+
+                  </TableCell>
+                  {React.Children.toArray(
+                    headCells.map((headCell, i) => {
+                      if (headCell.numeric) {
+                        return (
+                          <TableCell
+                            sx={{
+                              fontWeight: 700,
+                              p: 1,
+                              display: "flex",
+                              justifyContent: "center",
+                            }}
+                          >
+                            {getSum(rows, headCell.id)}
+                          </TableCell>
+                        );
+                      }
+                      if (i !== 0) return <TableCell />;
+                      return false;
+                    })
+                  )}
+                  {expandIconAt === "end" && <TableCell />}
+                </TableRow>
+              )}
+              {!pagination && showTotal && orderSummary?.isRefundable === true && (avlCheck || (orderSummary?.status !== "OPEN" && orderSummary?.status !== "SAVED_FOR_LATER" && (orderSummary?.status === "PAYMENT_COMPLETED" || orderSummary?.status === "INTERNALLY_DELIVERED" || orderSummary?.status === "DELIVERED"))) && (
+                <TableRow
+                  sx={{
+                    backgroundColor: (theme) => theme.palette.grey[50],
+                    alignItems: "center",
+                    borderRadius: "0 0 0.5rem 0.5rem",
+                  }}
+                >
+                  <TableCell
+                    colSpan={totalColSpan - 1}
+                    sx={{ display: "flex", alignItems: "center" }}
+                  >
+                    <Typography
+                      sx={{
+                        textAlign: "left",
+                        fontWeight: 700,
+                        color: "#000",
+                        mr: 2,
+                      }}
+                    >
+                      Refunded Amount
+                    </Typography>
+                  </TableCell>
+                  {React.Children.toArray(
+                    headCells.map((headCell, i) => {
+                      if (headCell.numeric) {
+                        return (
+                          <TableCell
+                            sx={{
+                              fontWeight: 700,
+                              p: 1,
+                              display: "flex",
+                              justifyContent: "center",
+                            }}
+                          >
+                            {orderSummary?.refundedAmount}
+                          </TableCell>
+                        );
+                      }
+                      if (i !== 0) return <TableCell />;
+                      return false;
+                    })
+                  )}
+                  {expandIconAt === "end" && <TableCell />}
+                </TableRow>
+
+              )}
+              {!pagination && showTotal && orderSummary?.isDiscountable === true && (avlCheck || (orderSummary?.status !== "OPEN" && orderSummary?.status !== "SAVED_FOR_LATER")) && (
+                <TableRow
+                  sx={{
+                    backgroundColor: (theme) => theme.palette.grey[50],
+                    alignItems: "center",
+                    borderRadius: "0 0 0.5rem 0.5rem",
+                  }}
+                >
+                  <TableCell
+                    colSpan={totalColSpan - 2}
+                    sx={{ display: "flex", alignItems: "center" }}
+                  >
+                    <Typography
+                      sx={{
+                        textAlign: "left",
+                        fontWeight: 700,
+                        color: "#000",
+                        mr: 2,
+                      }}
+                    >
+                      Discounted
+                    </Typography>
+                  </TableCell>
+                  {React.Children.toArray(
+                    headCells.map((headCell, i) => {
+                      if (headCell.numeric) {
+                        return (
+                          <TableCell
+                            sx={{
+                              fontWeight: 700,
+                              p: 1,
+                              display: "flex",
+                              justifyContent: "center",
+                              width: '150px'
+                            }}
+                          >
+                            {`${orderSummary?.discountRate}% ( ₹${(
+                              (parseInt(orderSummary?.discountRate) / 100) *
+                              parseInt(orderSummary?.totalAmount)
+                            ).toFixed(2)})`}
+                          </TableCell>
+                        );
+                      }
+                      if (i !== 0) return <TableCell />;
+                      return false;
+                    })
+                  )}
+                  {expandIconAt === "end" && <TableCell />}
+                </TableRow>
+              )}
+              {!pagination && showTotal && (orderSummary?.isDiscountable === true || orderSummary?.isRefundable === true) && (avlCheck || (orderSummary?.status !== "OPEN" && orderSummary?.status !== "SAVED_FOR_LATER")) && (
+                <TableRow
+                  sx={{
+                    backgroundColor: (theme) => theme.palette.grey[50],
+                    alignItems: "center",
+                    borderRadius: "0 0 0.5rem 0.5rem",
+                  }}
+                >
+                  <TableCell
+                    colSpan={totalColSpan - 1}
+                    sx={{ display: "flex", alignItems: "center" }}
+                  >
+                    <Typography
+                      sx={{
+                        textAlign: "left",
+                        fontWeight: 700,
+                        color: "#000",
+                        mr: 2,
+                      }}
+                    >
+                      Grand Total
+                    </Typography>
+                  </TableCell>
+                  {React.Children.toArray(
+                    headCells.map((headCell, i) => {
+                      if (headCell.numeric) {
+                        return (
+                          <TableCell
+                            sx={{
+                              fontWeight: 700,
+                              p: 1,
+                              display: "flex",
+                              justifyContent: "center",
+                            }}
+                          >
+                            {orderSummary?.amount}
+                          </TableCell>
+                        );
+                      }
+                      if (i !== 0) return <TableCell />;
+                      return false;
+                    })
+                  )}
+                  {expandIconAt === "end" && <TableCell />}
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {pagination && (
+          <Box
+            sx={{
+              display: "flex",
+              backgroundColor: "#ffffff",
+              alignItems: "center",
+              borderRadius: "0 0 0.5rem 0.5rem",
+            }}
+          >
+            <Item sx={{ flexGrow: 1, pl: "1rem" }}>
+              <Typography variant="body2">
+                {page + 1}-{rowsPerPage} of {lengthOfData}
+              </Typography>
+            </Item>
+            <Item>
+              <Typography variant="body2">Rows per page</Typography>
+            </Item>
+            <Item>
+              <FormControl sx={{ minWidth: 50 }} size="small">
+                <Select
+                  labelId="rows-per-page"
+                  id="rows-per-page"
+                  value={rowsPerPage.toString()}
+                  onChange={handleChangeRowsPerPage}
+                  size="small"
+                  style={{ backgroundColor: "#FFFFFF" }}
+                >
+                  {rowsPerPageDropdown.map(
+                    (val: { page: number; label: string }) => (
+                      <MenuItem key={val.page} value={val.page}>
+                        {val.label}
+                      </MenuItem>
+                    )
+                  )}
+                </Select>
+              </FormControl>
+            </Item>
+            <Item>
+              <Pagination
+                count={Math.ceil(lengthOfData / rowsPerPage)}
+                onChange={handleChangePage}
+                page={page + 1}
+                color="primary"
+                shape="circular"
+                size="small"
+                // showFirstButton
+                // showLastButton
+                siblingCount={0}
+                boundaryCount={2}
+              />
+            </Item>
+          </Box>
+        )}
+      </Paper>
+    </Box>
+  );
+};
+
+PaginatedTable.defaultProps = {
+  pagination: true,
+  serialNo: false,
+  selectable: false,
+  expandIconAt: "start",
+  uniqueKey: "id",
+  actions: [],
+  loading: false,
+  avlCheck: false,
+};
+export default PaginatedTable;
+
+
+import Layout from "@/components/Layout";
+import protectedPageRoute from "@/helper/requireAuthentication";
+import {
+  Box,
+  Grid,
+  CircularProgress,
+  Button,
+  Modal,
+  Typography,
+  Stack,
+  Select,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  TextField,
+} from "@mui/material";
+import React, { useState } from "react";
+import Back from "@/components/Layout/Back";
+import Details from "@/components/Details";
+import PrescriptionDetails from "@/components/PrescriptionDetails";
+import OrderLockedModal from "@/components/OrderLockedModal";
+import BottomButton from "@/components/Layout/BottomButton";
+import AddMedicine from "@/components/AddMedicine";
+import { useRouter } from "next/router";
+import Header from "@/components/Layout/Header";
+import {
+  getOrderById,
+  updateStatus,
+  updateOrderItems,
+  removeOrderItems,
+  getDuePrescriptions,
+  addToOrder,
+  getUserDetails,
+  sendPharmacistDetails,
+  getAvailableQty,
+  moveToMAP,
+  moveToMAD,
+  cancelDunzoPickup,
+  moveToMAID,
+  applyDiscount,
+  removeDiscount,
+  raiseTicket,
+  getUnitName,
+  getDiscountList,
+  refundAmount,
+} from "@/modules";
+import { deleteCookie, getCookie } from "cookies-next";
+import MedicineModal from "@/components/MedicineModal";
+import PageContainer from "ui/common/containers/PageContainer";
+import ChooseDeliveryPartner from "@/components/ChooseDeliveryPartner";
+import { NextPageWithLayout } from "../_app";
+import PrintLabel from "@/components/PrintLabel";
+
+const Order: NextPageWithLayout = (props: any) => {
+  {
+    /*
+     * Order Details Page
+     *
+     * This page is accessed by clicking on an individual order and displays a summary of the entire order
+     * placed by the patient.
+     *
+     * It is made up of AddMedicine, Details, PrescriptionDetails, BottomButton components. Details on each is available in the respective files
+     *
+     * Actions available on this page:
+     * - Approve the order after verifying added medicines
+     * - Add a substitute medicine if a drug is unavailable
+     * - Save/Reject any particular order
+     *
+     * The layout of this page differs based on the status and nature of the order.
+     *
+     * Different buttons are rendered for order of different statuses. The logic for this is in the BottomButton.tsx file
+     *
+     * Any modal displayed across the entire flow is rendered from the MedicineModal component
+     *
+     * All the API calls and the endpoints is in the modules folder
+     */
+  }
+
+  const router = useRouter();
+  const { orderID } = router.query;
+  const [loading, setLoading] = useState<boolean>(true);
+  const [orderSummary, setOrderSummary] = useState<any>({});
+  const [unitName, setUnitName] = useState<string>("");
+  const [shortOrderID, setShortOrderID] = useState<string>("");
+  const [orderStatus, setOrderStatus] = useState<any>();
+  const [medicineList, setMedicineList] = useState<any[]>([]);
+  const [prescriptionList, setPrescriptionList] = useState<any[]>([]);
+  const [openModal, setOpenModal] = useState<any>({
+    state: false, //to open/close modal
+    type: "", //Type of modal to be displayed
+    content: "", //The content if any to be displayed inside the modal
+  }); //Controls open and closing of modal
+  const [showRowLocked, setShowRowLocked] = useState<boolean>(false);
+  const [totalRecords, setTotalRecords] = useState<number>(0);
+  const [progress, setProgress] = useState<number>(0);
+  const [availabilityChecked, setAvailabilityChecked] = useState<boolean>(false);
+  const [availabilityList, setAvailabilityList] = useState<any[]>([]);
+  const [transformedAvailabilityList, setTransformedAvailabilityList] =
+    useState<any[]>([]);
+  const [currentPrescription, setCurrentPrescription] = useState<any>({});
+  const [reject, setReject] = useState<boolean | any>(false);
+  const [approved, setApproved] = useState<boolean>(false);
+  const [approveSuccess, setApproveSuccess] = useState<boolean>(true);
+  const [duePrescriptions, setDuePrescriptions] = useState<any[]>([]);
+  const [pharmacistID, setPharmacistID] = useState<any>();
+  const [pharmacistDetails, setPharmacistDetails] = useState<any>();
+  const [openRefillDates, setOpenRefillDates] = useState<boolean>(false);
+  const [discountApplied, setDiscountApplied] = useState<boolean>(false);
+  const [togglePDFstate, setTogglePDFstate] = useState<boolean>(false);
+  const [isDeliveryChoose, setIsDeliveryChoose] = useState<boolean>(false);
+  const [openDiscountModal, setOpenDiscountModal] = React.useState<boolean>(false)
+  const [discountPercent, setDiscountPercent] = React.useState<string>('')
+  const [discountList, setDiscountList] = React.useState<any[]>([])
+  const [prevRowValue, setPrevRowVal] = React.useState({})
+  const [mrpPostCheck, setMrpPostCheck] = React.useState(false)
+  const [qtyCheck, setQtyCheck] = React.useState(true)
+  const [isPrintLabel, setIsPrintLabel] = React.useState(false)
+  const [openRefundModal, setOpenRefundModal] = React.useState(false)
+  const [refundAmt, setRefundAmt] = React.useState('')
+  const [reworked, setReworked] = React.useState(false)
+  const [isRefund,setIsRefund] = React.useState(false);
+
+
+  const updateItems = async (body: any) => {
+    const res = await updateOrderItems(body); // API called upon saving/approving. Updates the items of an order
+  };
+
+  const toGetUnitName = async (unit?: any) => {
+    const res = await getUnitName(unit); // API called to get full name of the unit
+    //console.log(res,'unit res')
+    if (res?.status && res?.status === 200 && res?.data?.length !== 0) {
+      setUnitName(res?.data[0]?.description);
+    } else {
+      setUnitName("Error fetching unit details...");
+    }
+  };
+
+  const removeItem = async (body: any) => {
+    const res = await removeOrderItems(body); //API called to remove an item in the order
+    if (res?.status && (res?.status === 400 || res?.status === 500)) {
+      router.push("/500");
+    } else if (res.status === 403) {
+      deleteCookie("userid");
+      deleteCookie("refreshToken");
+      deleteCookie("accessToken");
+      router.push("/login");
+    } else {
+      //getOrderSummary(orderID);
+      if (orderSummary?.isDiscountable === true) {
+        const discountRes = await applyDiscount({
+          orderId: orderSummary?.orderId,
+          discountRate: orderSummary?.discountRate
+        });
+        if (
+          discountRes?.status &&
+          (discountRes?.status === 400 || discountRes?.status === 500)
+        ) {
+          router.push("/500");
+        } else if (discountRes?.status && discountRes?.status === 403) {
+          deleteCookie("userid");
+          deleteCookie("refreshToken");
+          deleteCookie("accessToken");
+          router.push("/login");
+        } else {
+          // Upon OK response, status is updated and user is given a confirmation
+          getOrderSummary(orderID);
+        }
+      }
+    }
+  };
+
+  const updateOrderStatus = async (body: any) => {
+    const res = await updateStatus(body); // API called to updates the status of a particular order
+  };
+
+  const callGetDuePrescriptions = async (body: any) => {
+    const res = await getDuePrescriptions({ patientId: body }); // API gives the list of near due prescriptions for a patient
+    setDuePrescriptions(res?.data);
+  };
+
+  const getPharmacistDetails = async (id: string) => {
+    try {
+      const res = await getUserDetails(id); // API to get the details of logged in pharmacist
+      setPharmacistDetails(res?.data);
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  //This API is called when a new prescription is added to the order from near due refill prescriptions section
+  const callAddToOrder = async (prescription: any) => {
+    let tempBody = {
+      orderId: orderSummary?.orderId,
+      listOfPrescriptions: [
+        {
+          prescriptionId: prescription?.prescriptionId,
+          prescriptionBoughtFor: "1 week",
+        },
+      ],
+    };
+    const res = await addToOrder(tempBody);
+    getOrderSummary(orderID);
+  };
+
+  //Function executed when user clicks on Check Availability
+  const handleCheckAvailabilty = async () => {
+    handleModalOpen(true, "loading", "Checking Availability...");
+    let itemCodes: string[] = [];
+    medicineList.map((med) => itemCodes.push(med?.medicineId)); //Medicine list contains all added medicine, an array with all medicine IDs are sent to the API
+    const res = await getAvailableQty({
+      unit: orderSummary?.unit,
+      itemCode: itemCodes,
+      department: "",
+    });
+    if (res?.statusCode && res?.statusCode === 200) {
+      // Create a new array with assigned values based on matching IDs
+      const newArray = medicineList?.map((med) => {
+        const matchedObj = res?.data.find(
+          (medQty: any) => medQty.itemCode === med.medicineId
+        );
+        const availableQty = matchedObj ? matchedObj.totalQuantity : 0;
+        return { ...med, availableQty };
+      });
+      // Output the new array
+      setAvailabilityList(newArray); // Once availability is checked, this is the list rendered on the table
+      setAvailabilityChecked(true);
+      setMrpPostCheck(true)
+      setQtyCheck(false)
+      setTimeout(() => {
+        //setOpenModal(false);
+        handleModalClose();
+      }, 2000);
+    } else if (res?.status && res?.status === 403) {
+      // in case of forbidden error, user is logged out
+      deleteCookie("userid");
+      deleteCookie("refreshToken");
+      deleteCookie("accessToken");
+      router.push("/login");
+    } else {
+      //setOpenModal(false);
+      handleModalClose();
+      handleModalOpen(true, "error", ""); // In case of any other error, the error modal is displayed
+    }
+  };
+
+
+
+  //function implemented when user clicks on Approve order
+  const handleApproveOrder = async () => {
+    handleModalOpen(true, "loading", "Approving your order...");
+    //Medicines with the same prescription ID are grouped together and an API call is made for each prescription ID
+    const groupedArray = medicineList.reduce((acc, obj) => {
+      const { prescriptionId } = obj;
+      if (!acc[prescriptionId]) {
+        acc[prescriptionId] = [];
+      }
+      acc[prescriptionId].push(obj);
+      return acc;
+    }, {});
+
+    const transformedArray = Object.entries(groupedArray).map(
+      ([prescriptionId, medicines]: any) => {
+        const [firstMedicine] = medicines;
+        return {
+          orderId: orderSummary?.orderId,
+          patientId: orderSummary?.patientId,
+          prescriptionId: prescriptionId,
+          items: medicines.map(
+            ({
+              // medicineId,
+              // medicineName,
+              // medicineStrength,
+              // quantity,
+              // amount,
+              medicineId,
+              quantity,
+              medicineName,
+              medicineStrength,
+              amount,
+              mrp
+            }: any) => ({
+              // medicineId,
+              // medicineName,
+              // medicineStrength,
+              // quantity: quantity.toString(),
+              // amount,
+              medicineId,
+              quantity: quantity.toString(),
+              medicineName,
+              medicineStrength,
+              //isEdit: mrp !== amount ? 'YES':'NO' ,
+              isEdit: (Number(amount) !== (Number(mrp) * Number(quantity))) ? 'YES' : 'NO',
+              //modifiedMRPOfTheDrug: Number(amount) !== Number(mrp) ? mrp : amount,
+              //modifiedMRPOfTheDrug: mrp !== amount ? mrp : amount
+              modifiedMRPOfTheDrug: mrp
+            })
+          ),
+        };
+      }
+    );
+
+    //console.log('med list====>',medicineList)
+
+    const apiRes = await Promise.all(
+      transformedArray.map(async (item) => {
+        const res = await updateOrderItems(item);
+
+        return res?.status ? res?.status : 200;
+      })
+    );
+    //all the response codes are captured in the array
+    const badRequestIndex = apiRes?.findIndex(
+      (statusCode) => statusCode !== 200
+    );
+    //if there isn't any error response in the array, order status is updated to Payment Pending, else error modal pops up
+    if (badRequestIndex === -1) {
+      if (orderSummary?.isDiscountable === true) {
+        const discountRes = await applyDiscount({
+          orderId: orderSummary?.orderId,
+          discountRate: orderSummary?.discountRate
+        });
+        if (
+          discountRes?.status &&
+          (discountRes?.status === 400 || discountRes?.status === 500)
+        ) {
+          handleModalOpen(true, "error", "");
+        } else if (discountRes?.status && discountRes?.status === 403) {
+          deleteCookie("userid");
+          deleteCookie("refreshToken");
+          deleteCookie("accessToken");
+          router.push("/login");
+        } else {
+          // Upon OK response, status is updated and user is given a confirmation
+          getOrderSummary(orderID);
+        }
+      }
+      const res = await updateStatus({
+        orderId: orderSummary?.orderId,
+        status: "PAYMENT_PENDING",
+        ...(reworked === true && {isReworked:true})
+        
+      });
+      if (res?.status && (res?.status === 400 || res?.status === 500)) {
+        handleModalClose();
+        handleModalOpen(true, "error", "");
+      } else if (res?.status === 403) {
+        deleteCookie("userid");
+        deleteCookie("refreshToken");
+        deleteCookie("accessToken");
+        router.push("/login");
+      } else {
+        getOrderSummary(orderID);
+        setAvailabilityChecked(false);
+        const pharmacistDetails = await sendPharmacistDetails({
+          orderId: orderSummary?.orderId,
+          pharmacistId: pharmacistID,
+        });
+        setTimeout(() => {
+          handleModalClose();
+          setApproved(true);
+          prescriptionList.length === 0
+            ? handleModalOpen(
+              true,
+              "ApproveConfirmation",
+              `Order with OrderID:${shortOrderID} has been approved`
+            )
+            : setOpenRefillDates(true);
+        }, 2000);
+      }
+    } else {
+      setTimeout(() => {
+        handleModalClose();
+        handleModalOpen(true, "error", "Error while updating items");
+      }, 5000);
+    }
+  };
+
+  //function implemented when user clicks on Draft RX
+  const handleDraftRx = async () => {
+    handleModalOpen(true, "loading", "Saving your order...");
+    //Medicines with the same prescription ID are grouped together and an API call is made for each prescription ID
+    const groupedArray = medicineList.reduce((acc, obj) => {
+      const { prescriptionId } = obj;
+      if (!acc[prescriptionId]) {
+        acc[prescriptionId] = [];
+      }
+      acc[prescriptionId].push(obj);
+      return acc;
+    }, {});
+    const transformedArray = Object.entries(groupedArray).map(
+      ([prescriptionId, medicines]: any) => {
+        const [firstMedicine] = medicines;
+        return {
+          orderId: orderSummary?.orderId,
+          patientId: orderSummary?.patientId,
+          prescriptionId: prescriptionId,
+          items: medicines.map(
+            ({
+              medicineId,
+              medicineName,
+              medicineStrength,
+              quantity,
+              amount,
+            }: any) => ({
+              medicineId,
+              medicineName,
+              medicineStrength,
+              quantity: quantity.toString(),
+              amount,
+            })
+          ),
+        };
+      }
+    );
+    const apiRes = await Promise.all(
+      transformedArray.map(async (item) => {
+        const res = await updateOrderItems(item); //all the response codes are captured in the array
+        return res.status ? res.status : 200;
+      })
+    );
+    //if there isn't any error response in the array, order status is updated to Payment Pending, else error modal pops up
+    const badRequestIndex = apiRes.findIndex(
+      (statusCode) => statusCode !== 200
+    );
+    if (badRequestIndex === -1) {
+      if (orderSummary?.isDiscountable === true) {
+        const discountRes = await applyDiscount({
+          orderId: orderSummary?.orderId,
+          discountRate: orderSummary?.discountRate
+        });
+        if (
+          discountRes?.status &&
+          (discountRes?.status === 400 || discountRes?.status === 500)
+        ) {
+          handleModalOpen(true, "error", "");
+        } else if (discountRes?.status && discountRes?.status === 403) {
+          deleteCookie("userid");
+          deleteCookie("refreshToken");
+          deleteCookie("accessToken");
+          router.push("/login");
+        } else {
+          // Upon OK response, status is updated and user is given a confirmation
+          getOrderSummary(orderID);
+        }
+      }
+      const res = await updateStatus({
+        orderId: orderSummary.orderId,
+        status: "SAVED_FOR_LATER",
+      });
+      if (res?.status && (res?.status === 400 || res?.status === 500)) {
+        handleModalClose();
+        handleModalOpen(true, "error", "");
+      } else if (res?.status === 403) {
+        deleteCookie("userid");
+        deleteCookie("refreshToken");
+        deleteCookie("accessToken");
+        router.push("/login");
+      } else {
+        setTimeout(() => {
+          handleModalClose();
+          handleModalOpen(
+            true,
+            "confirmation",
+            `Order with OrderID:${shortOrderID} has been saved`
+          );
+        }, 1000);
+
+        setTimeout(() => {
+          handleModalClose();
+          setApproved(true);
+          router.push("/pharmacist");
+        }, 3000);
+      }
+    } else {
+      setTimeout(() => {
+        handleModalClose();
+        handleModalOpen(true, "error", "");
+      }, 5000);
+    }
+  };
+
+  //function implemented when user clicks on Mark As Packed
+  const handleMarkAsPacked = async (val: any, reason: any) => {
+    handleModalOpen(true, "loading", "Saving your order...");
+    //API call update order status to Out for Pickup
+    if (val !== 'internal_delivery') {
+      const res = await moveToMAP({
+        orderId: orderSummary.orderId,
+        deliveryPartner: val
+      });
+      if (res?.status && (res?.status === 400 || res?.status === 500)) {
+        handleModalClose();
+        handleModalOpen(true, "error", "");
+      } else if (res.status && res?.status === 403) {
+        deleteCookie("userid");
+        deleteCookie("refreshToken");
+        deleteCookie("accessToken");
+        router.push("/login");
+      } else if (res?.status === 200 && res?.type === "error") {
+        handleModalClose();
+        handleModalOpen(true, "error", res?.message);
+      } else {
+        getOrderSummary(orderID);
+        setTimeout(() => {
+          handleModalClose();
+          handleModalOpen(
+            true,
+            "confirmation",
+            `Order with OrderID:${shortOrderID} has been marked as packed`
+          );
+        }, 1000);
+
+        setTimeout(() => {
+          handleModalClose();
+          setApproved(true);
+          router.push("/pharmacist");
+        }, 3000);
+      }
+    } else {
+      getMarkAsInternallyDelivered(orderSummary.orderId, reason)
+    }
+  };
+
+  //function implemented when user clicks on Reject Order.Opens the required modal
+  const handleRejectOrder = () => {
+    handleModalOpen(true, "reject", "");
+  };
+
+  //function implemented when user clicks confirm on the reject order modal, this is a callback function (called on MedicineModal line#190).
+  const getRejected = async (state: Boolean, reason: string) => {
+    // reason holds the user comments
+    handleModalOpen(true, "loading", "Rejecting the order...");
+    setReject(state);
+    const res = await updateStatus({
+      orderId: orderSummary?.orderId,
+      status: "REJECTED",
+      rejectionReason: reason,
+    });
+    //error handling
+    if (res?.status && (res?.status === 400 || res?.status === 500)) {
+      handleModalClose();
+      handleModalOpen(true, "error", "");
+    } else if (res?.status && res?.status === 403) {
+      deleteCookie("userid");
+      deleteCookie("refreshToken");
+      deleteCookie("accessToken");
+      router.push("/login");
+    } else {
+      //if OK response, then status is updated to REJECTED
+      const pharmacistDetails = await sendPharmacistDetails({
+        orderId: orderSummary?.orderId,
+        pharmacistId: pharmacistID,
+      });
+      getOrderSummary(orderID);
+      handleModalClose();
+      handleModalOpen(
+        true,
+        "confirmation",
+        `Order with OrderID:${shortOrderID} has been rejected`
+      );
+    }
+    setTimeout(() => {
+      handleModalClose();
+      router.push("/pharmacist");
+    }, 3000);
+  };
+
+  //function implemented when user clicks on Mark As Delivered. Opens the required modal
+  const handleMarkAsDelivered = () => {
+    handleModalOpen(true, "markDelivered", "");
+  };
+
+  //function implemented when user clicks confirm on the Mark as delivered modal, this is a callback function (called on MedicineModal line#190).
+  const getMarkAsDelivered = async (state: Boolean, reason: string) => {
+    // reason holds user comments
+    handleModalOpen(true, "loading", "Marking as delivered...");
+    setReject(state);
+    //API call to updated status to DELIVERED
+    const res = await moveToMAD({
+      orderId: orderSummary.orderId,
+      comments: reason,
+    });
+    //error handling
+    if (res?.status && (res?.status === 400 || res?.status === 500)) {
+      handleModalClose();
+      handleModalOpen(true, "error", "");
+    } else if (res?.status && res?.status === 403) {
+      deleteCookie("userid");
+      deleteCookie("refreshToken");
+      deleteCookie("accessToken");
+      router.push("/login");
+    } else {
+      // Upon OK response, status is updated and user is given a confirmation
+      getOrderSummary(orderID);
+      handleModalClose();
+      handleModalOpen(
+        true,
+        "confirmation",
+        `Order with OrderID:${shortOrderID} has been marked as delivered`
+      );
+    }
+    setTimeout(() => {
+      handleModalClose();
+      router.push("/pharmacist");
+    }, 3000);
+  };
+
+  const handleSupportTicket = () => {
+    handleModalOpen(true, "supportTicket", "");
+  };
+
+  const getSupportTicket = async (contact: string, issue: string) => {
+    // reason holds user comments
+    handleModalOpen(true, "loading", "Raising your ticket...");
+    //API call
+    const res = await raiseTicket({
+      orderId: orderSummary.orderId,
+      issueDescription: issue,
+      contactNumber: contact,
+    });
+    //error handling
+    if (res?.status && (res?.status === 400 || res?.status === 500)) {
+      handleModalClose();
+      handleModalOpen(true, "error", "");
+    } else if (res?.status && res?.status === 403) {
+      deleteCookie("userid");
+      deleteCookie("refreshToken");
+      deleteCookie("accessToken");
+      router.push("/login");
+    } else {
+      // Upon OK response, status is updated and user is given a confirmation
+      getOrderSummary(orderID);
+      handleModalClose();
+      handleModalOpen(
+        true,
+        "customConfirmation",
+        `Support ticket for order with OrderID:${shortOrderID} has been raised successfully`
+      );
+    }
+    setTimeout(() => {
+      handleModalClose();
+    }, 5000);
+  };
+
+  //function to handle opening of any modal
+  const handleModalOpen = (state: any, type: any, content: any) => {
+    //state- true/false, type-.type of modal to be opened, content- the message to be displayed in the modal
+    setOpenModal({ state, type, content });
+  };
+
+  //function to handle closing of any modal
+  const handleModalClose = () => {
+    setOpenModal({ state: false });
+  };
+
+  //API called upon page load to get the entire order summary
+  async function getOrderSummary(orderID: any) {
+    setMedicineList([]);
+    setLoading(true);
+    const id: any = getCookie("userid");
+    const response = await getOrderById(orderID).then((res: any) => {
+      if (res?.data?.statusCode && res?.data?.statusCode === 403) {
+        deleteCookie("userid");
+        deleteCookie("refreshToken");
+        deleteCookie("accessToken");
+        router.push("/login");
+      } else {
+        if (
+          (["OPEN", "SAVED_FOR_LATER", "PAYMENT_COMPLETED"].includes(
+            res?.status
+          ) &&
+            res?.currentLockBy == id) ||
+          !["OPEN", "SAVED_FOR_LATER", "PAYMENT_COMPLETED"].includes(
+            res?.status
+          )
+        ) {
+          setOrderSummary(res);
+          toGetUnitName(res?.unit);
+          setDiscountApplied(res?.isDiscountable);
+          setShortOrderID(res?.sequence_number);
+          setOrderStatus(res?.status);
+          addedMedicines(res);
+          callGetDuePrescriptions(res?.patientId);
+        } else {
+          setShowRowLocked(true);
+        }
+      }
+    });
+    setPharmacistID(id);
+    setLoading(false);
+  }
+
+  const handleCloseLockedRowModal = () => {
+    setShowRowLocked(false);
+    router.back();
+  };
+
+  // after checking availability, if all medicines are deleted, the addMedicine button shd be re-enabled
+  React.useEffect(() => {
+    if (availabilityList.length === 0) {
+      setAvailabilityChecked(false);
+    }
+  }, [availabilityList]);
+
+  //this function is called to clean up the data received from the API call
+  const addedMedicines = (summary: any) => {
+    //all the medicines added by the patient are stored in the medicineList state. Any medicine the pharmacist adds is also saved in the same state
+    summary?.items?.map((item: any) => {
+      if (item?.medicineId !== "0") {
+        setMedicineList((prevMeds) => {
+          if (!prevMeds.some((p) => p.medicineId === item.medicineId)) {
+            return [...prevMeds, item];
+          }
+          return prevMeds;
+        });
+      }
+      // the prescriptions ordered by patients are added to the prescriptionList state
+      if (
+        item.prescriptionId !== "0" &&
+        !prescriptionList.some((p) => p.prescriptionId === item.prescriptionId)
+      ) {
+        setPrescriptionList((prevPrescs) => {
+          if (
+            !prevPrescs.some((p) => p.prescriptionId === item.prescriptionId)
+          ) {
+            return [...prevPrescs, item];
+          }
+          return prevPrescs;
+        });
+      }
+    });
+  };
+
+  //callback function, called when a new medicine is added. It updates the medicineList state accordingly
+  const updateList = (addedList: any) => {
+    setMedicineList(addedList)
+  };
+  console.log('updated list', medicineList)
+  //this callback function stores the currently selected prescriptionID in the currentPrescription state
+  const setprescriptionID = (item: any) => {
+    setCurrentPrescription(item);
+  };
+  //useEffect to get order summary upon pageload and validate the user
+  React.useEffect(() => {
+    getOrderSummary(orderID);
+
+    const id: any = getCookie("userid");
+    if (id) {
+      getPharmacistDetails(id);
+      toGetUnitName();
+    } else {
+      deleteCookie("accessToken");
+      deleteCookie("refreshToken");
+      deleteCookie("userid");
+      deleteCookie("sessionID");
+      router.push("/login");
+    }
+  }, [orderID]);
+
+  //to set the first prescription as currentPrescription by default
+  React.useEffect(() => {
+    setCurrentPrescription(prescriptionList[0]);
+  }, [prescriptionList]);
+
+  const handleCancelPickup = () => {
+    handleModalOpen(true, "markPickupCancelled", "");
+  };
+
+  const getPickupCancelled = async (state: Boolean, reason: string) => {
+    // reason holds user comments
+    handleModalOpen(true, "loading", "Marking as Pickup Cancelled...");
+    setReject(state);
+    //API call to updated status to DELIVERED
+    try {
+      const res = await cancelDunzoPickup({
+        orderId: orderSummary.orderId,
+        cancellationReason: reason,
+      });
+      //error handling
+      if (res?.status && (res?.status == 400 || res?.status == 500)) {
+        handleModalClose();
+        handleModalOpen(true, "error", res.data.message);
+      } else if (res?.status && res?.status === 403) {
+        deleteCookie("userid");
+        deleteCookie("refreshToken");
+        deleteCookie("accessToken");
+        router.push("/login");
+      } else {
+        // Upon OK response, status is updated and user is given a confirmation
+        getOrderSummary(orderID);
+        handleModalClose();
+        handleModalOpen(
+          true,
+          "confirmation",
+          `Order with OrderID:${shortOrderID} has been cancelled for pickup`
+        );
+      }
+      setTimeout(() => {
+        handleModalClose();
+        router.push("/pharmacist");
+      }, 3000);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleMarkAsInternallyDelivered = () => {
+    handleModalOpen(true, "markInternallyDelivered", "");
+  };
+
+  const getMarkAsInternallyDelivered = async (
+    state: Boolean,
+    reason: string
+  ) => {
+    // reason holds user comments
+    handleModalOpen(true, "loading", "Marking as internally delivered...");
+    setReject(state);
+    //API call to updated status to DELIVERED
+    const res = await moveToMAID({
+      orderId: orderSummary.orderId,
+      comments: reason,
+    });
+    //error handling
+    if (res?.status && (res?.status === 400 || res?.status === 500)) {
+      handleModalClose();
+      handleModalOpen(true, "error", "");
+    } else if (res?.status && res?.status === 403) {
+      deleteCookie("userid");
+      deleteCookie("refreshToken");
+      deleteCookie("accessToken");
+      router.push("/login");
+    } else {
+      // Upon OK response, status is updated and user is given a confirmation
+      getOrderSummary(orderID);
+      handleModalClose();
+      handleModalOpen(
+        true,
+        "confirmation",
+        `Order with OrderID:${shortOrderID} has been marked as internally delivered`
+      );
+    }
+    setTimeout(() => {
+      handleModalClose();
+      router.push("/pharmacist");
+    }, 3000);
+  };
+
+  //function implemented when Apply Discount button is clicked
+  const confirmDiscount = async () => {
+    setDiscountApplied(true);
+    handleModalOpen(
+      true,
+      "loading",
+      "Please wait while order items are being updated..."
+    );
+    //Medicines with the same prescription ID are grouped together and an API call is made for each prescription ID
+    // const groupedArray = availabilityList.reduce((acc, obj) => {
+    const groupedArray = medicineList.reduce((acc, obj) => {
+      const { prescriptionId } = obj;
+      if (!acc[prescriptionId]) {
+        acc[prescriptionId] = [];
+      }
+      acc[prescriptionId].push(obj);
+      return acc;
+    }, {});
+
+    const transformedArray = Object.entries(groupedArray).map(
+      ([prescriptionId, medicines]: any) => {
+        const [firstMedicine] = medicines;
+        return {
+          orderId: orderSummary?.orderId,
+          patientId: orderSummary?.patientId,
+          prescriptionId: prescriptionId,
+          items: medicines.map(
+            ({
+              medicineId,
+              medicineName,
+              medicineStrength,
+              quantity,
+              amount,
+              mrp
+            }: any) => ({
+              medicineId,
+              medicineName,
+              medicineStrength,
+              quantity: quantity.toString(),
+              //amount:mrp,
+              isEdit: (Number(amount) !== (Number(mrp) * Number(quantity))) ? 'YES' : 'NO',
+              modifiedMRPOfTheDrug: mrp
+            })
+          ),
+        };
+      }
+    );
+
+    const apiRes = await Promise.all(
+      transformedArray.map(async (item) => {
+        const res = await updateOrderItems(item);
+
+        return res?.status ? res?.status : 200;
+      })
+    );
+    //all the response codes are captured in the array
+    const badRequestIndex = apiRes?.findIndex(
+      (statusCode) => statusCode !== 200
+    );
+
+    //if there isn't any error response in the array, order status is updated to Payment Pending, else error modal pops up
+    if (badRequestIndex === -1) {
+      const res = await applyDiscount({
+        orderId: orderSummary?.orderId,
+        discountRate: discountPercent.toString()
+      });
+      setOpenDiscountModal(false)
+      setDiscountPercent('')
+      if (res?.status && (res?.status === 400 || res?.status === 500)) {
+        handleModalClose();
+        handleModalOpen(true, "error", "");
+      } else if (res?.status && res?.status === 403) {
+        deleteCookie("userid");
+        deleteCookie("refreshToken");
+        deleteCookie("accessToken");
+        router.push("/login");
+      } else {
+        // Upon OK response, status is updated and user is given a confirmation
+        getOrderSummary(orderID);
+        if (
+          res?.message &&
+          res?.message === "Amount is minimun to be discounted"
+        ) {
+          handleModalClose();
+          handleModalOpen(true, "error", "");
+        } else {
+          handleModalOpen(
+            true,
+            "customConfirmation",
+            `Discount has been applied for order with OrderID:${shortOrderID} successfully`
+          );
+          setTimeout(() => {
+            handleModalClose();
+          }, 5000);
+        }
+      }
+    } else {
+      setTimeout(() => {
+        handleModalClose();
+        handleModalOpen(true, "error", "Error while updating items");
+      }, 5000);
+    }
+  };
+
+  //fulction to show discount list modal
+  const applyOrderDiscount = () => {
+    setOpenDiscountModal(true)
+    getDiscountPercentList()
+  }
+
+  //function to remove the applied discount
+  const removeOrderDiscount = async () => {
+    console.log("remove disocunt");
+    setDiscountApplied(false);
+    const res = await removeDiscount({
+      orderId: orderSummary?.orderId,
+    });
+    getOrderSummary(orderID);
+  };
+
+  const handleCancelDiscount = () => {
+    setOpenDiscountModal(false)
+    setDiscountPercent('')
+  }
+
+  const handleDiscountChange = (event: any) => {
+    setDiscountPercent(event.target.value)
+  }
+
+
+  //function to get discount list
+  const getDiscountPercentList = async () => {
+    const res = await getDiscountList()
+    if (res?.status === 200) {
+      setDiscountList(res?.data)
+    }
+  }
+
+  //on click of print labels
+  const onClickPL = () => {
+    setIsPrintLabel(true)
+  }
+
+  //initiate refund
+  const applyOrderRefund = () => {
+    setOpenRefundModal(true)
+    // setIsRefund(true);
+  }
+
+  const handleRefund = async () => {
+    const res = await refundAmount({
+      orderId: orderSummary?.orderId,
+      refundedAmount: refundAmt,
+      isRefundable: true
+    })
+    console.log(orderSummary?.isRefundable)
+    if (res?.status === 200) {
+      setOpenRefundModal(false)
+      setRefundAmt('')
+    }
+    getOrderSummary(orderID);
+    
+  }
+
+  //handle rework
+
+  const handleRework=(orderSummaryVal:any,orderStatusVal:any)=>{
+    let res = {
+      ...orderSummaryVal,
+      status:'OPEN'
+    }
+    setOrderSummary(res)
+    setReworked(true)
+  }
+
+  //if localstorage has pdf data
+  React.useEffect(()=>{
+    const PdfData = localStorage.getItem('pdfData')
+    //console.log('p',PdfData?.length)
+    PdfData?.length >0 && setPdfDataPresent(true)
+  },[])
+
+  return (
+    <>
+      <Header
+        page={`Order ID:${shortOrderID}`}
+        status={orderStatus}
+        name={pharmacistDetails?.name}
+      />
+      <Back orderStatus={orderStatus} />
+      <PageContainer panel>
+        <Box sx={{ minHeight: "100vh", marginBottom: "0.5rem" }}>
+          {loading === true ? (
+            <Grid
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <CircularProgress />
+            </Grid>
+          ) : (
+            <Grid
+              container
+              xs={12}
+              sm={12}
+              md={12}
+              lg={12}
+              xl={12}
+              sx={{
+                display: "flex",
+                flexDirection: "row",
+                columnGap: "1rem",
+                justifyContent: "space-evenly",
+              }}
+            >
+              <Grid item xs={7} sm={7} md={7} lg={7} xl={7} style={{}}>
+                <Details orderSummary={orderSummary} unitName={unitName} handleUpdate={() => getOrderSummary(orderID)} />
+                <AddMedicine
+                  medList={medicineList}
+                  prescriptions={prescriptionList}
+                  updateList={updateList}
+                  check={availabilityChecked}
+                  setCheck={setAvailabilityChecked}
+                  avlList={availabilityList}
+                  setAvlList={setAvailabilityList}
+                  currentPresc={currentPrescription}
+                  orderSummary={orderSummary}
+                  removeItem={removeItem}
+                  duePrescriptions={duePrescriptions}
+                  callAddToOrder={callAddToOrder}
+                  discountStatus={discountApplied}
+                  removeOrderDiscount={removeOrderDiscount}
+                  applyOrderDiscount={applyOrderDiscount}
+                  mrpPostCheck={mrpPostCheck}
+                  qtyCheck={qtyCheck}
+                  applyOrderRefund={applyOrderRefund}
+                  refundCheck = {isRefund}
+                />
+              </Grid>
+              {prescriptionList.length !== 0 && (
+                <Grid
+                  item
+                  xs={4.5}
+                  sm={4.5}
+                  md={4.5}
+                  lg={4.5}
+                  xl={4.5}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    rowGap: "0.5rem",
+                    height: "40rem",
+                  }}
+                >
+
+                  {/* to rework on payment pending orders betow button is added */}
+                  {orderStatus ==='PAYMENT_PENDING' && <Button variant="contained" onClick={()=>handleRework(orderSummary,orderStatus)}>REWORK</Button>}
+
+                  <PrescriptionDetails
+                    order={prescriptionList}
+                    setCurrentPrescription={setprescriptionID}
+                    orderSummary={orderSummary}
+                    medList={medicineList}
+                    avlList={availabilityList}
+                    orderStatus={orderStatus}
+                    modalState={openModal.state}
+                    openRefillDates={openRefillDates}
+                    setOpenRefillDates={setOpenRefillDates}
+                  />
+                </Grid>
+              )}
+            </Grid>
+          )}
+        </Box>
+      </PageContainer>
+      <OrderLockedModal
+        open={showRowLocked}
+        onClose={(e: any, r: any) => {
+          if (r == "backdropClick") return;
+          setShowRowLocked(false);
+        }}
+        onClickOk={handleCloseLockedRowModal}
+      />
+      {isDeliveryChoose && (
+        <ChooseDeliveryPartner
+          open={isDeliveryChoose}
+          onClose={() => setIsDeliveryChoose(false)}
+          handleMarkAsPacked={handleMarkAsPacked}
+        />
+      )}
+      {
+        isPrintLabel && (
+          <PrintLabel
+            open={isPrintLabel}
+            onClose={() => setIsPrintLabel(false)}
+            orderSummary={orderSummary}
+          />
+        )
+      }
+      {!reject &&
+        (orderSummary.status === "OPEN" ||
+          orderSummary.status === "SAVED_FOR_LATER" ||
+          orderSummary.status === "PAYMENT_COMPLETED" ||
+          orderSummary.status === "PICKUP_CANCELLED" ||
+          orderSummary.status === "OUT_FOR_PICKUP" ||
+          orderSummary.status === "OUT_STATION_DELIVERY" ||
+          orderSummary.status === "OUT_FOR_DELIVERY" ||
+          orderSummary.status === "INTERNALLY_DELIVERED") && (
+          <BottomButton
+            addedMedicines={medicineList}
+            onClickCA={handleCheckAvailabilty}
+            onClickSD={handleDraftRx}
+            onClickMAP={() => setIsDeliveryChoose(true)}
+            check={availabilityChecked}
+            avlList={availabilityList}
+            onClickAO={handleApproveOrder}
+            onClickRO={handleRejectOrder}
+            approved={approved}
+            orderSummary={orderSummary}
+            onClickMAD={handleMarkAsDelivered}
+            onClickCP={handleCancelPickup}
+            onClickMAID={handleMarkAsInternallyDelivered}
+            onClickRST={handleSupportTicket}
+            onClickPL={onClickPL}
+          />
+        )}
+
+      {openModal.state && (
+        <MedicineModal
+          modalClose={handleModalClose}
+          type={openModal.type}
+          content={openModal.content}
+          value={progress}
+          orderSummary={orderSummary}
+          getRejected={getRejected}
+          getMarkAsDelivered={getMarkAsDelivered}
+          approved={approved}
+          prescriptions={prescriptionList}
+          callAddToOrder={callAddToOrder}
+          getPickupCancelled={getPickupCancelled}
+          getMarkAsInternallyDelivered={getMarkAsInternallyDelivered}
+          getSupportTicket={getSupportTicket}
+          getMarkAsPacked={handleMarkAsPacked}
+          currentPrescription={currentPrescription}
+        />
+      )}
+
+      {openDiscountModal && (
+        <Modal
+          open={openDiscountModal}
+          onClose={() => setOpenDiscountModal(false)}
+          aria-labelledby="modal-modal-title"
+          aria-describedby="modal-modal-description"
+        >
+          <Box sx={{
+            position: "absolute" as "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 400,
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            p: 4,
+          }}>
+            <Typography id="modal-modal-title" variant="h6" component="h2" sx={{ color: "#000", marginBottom: "1rem" }}>Please select discount %</Typography>
+            <FormControl fullWidth>
+              <InputLabel id="demo-simple-select-label">Select Discount %</InputLabel>
+              <Select
+                labelId="demo-simple-select-label"
+                id="demo-simple-select"
+                label="Select Discount &"
+                value={discountPercent}
+                onChange={handleDiscountChange}
+                MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+              >
+                {discountList?.length > 0 && (
+                  discountList?.map(
+                    (item: any) =>
+                      <MenuItem
+                        value={item?.value}
+                      >
+                        {item?.discount}
+                      </MenuItem>
+                  )
+                )}
+
+              </Select>
+            </FormControl>
+            <Stack spacing={2} direction="row" sx={{ mt: 1, float: "right" }}>
+              <Button onClick={handleCancelDiscount}>
+                CANCEL
+              </Button>
+              <Button variant="contained"
+                style={{ borderRadius: "0.25rem", boxShadow: "none" }}
+                disabled={discountPercent === ''}
+                onClick={confirmDiscount}
+              >
+                CONFIRM
+              </Button>
+            </Stack>
+          </Box>
+        </Modal>
+      )}
+
+      {
+        openRefundModal && (
+          <Modal
+            open={openRefundModal}
+            onClose={() => setOpenRefundModal(false)}
+            aria-labelledby="modal-modal-title"
+            aria-describedby="modal-modal-description"
+          >
+            <Box sx={{
+              position: "absolute" as "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: 400,
+              bgcolor: "background.paper",
+              boxShadow: 24,
+              p: 4,
+            }}>
+              <Typography id="modal-modal-title" variant="h6" component="h2" sx={{ color: "#000", marginBottom: "1rem" }}>Enter the amount to refund</Typography>
+              <TextField id="outlined-basic" label="Enter amount..." variant="outlined" fullWidth value={refundAmt} onChange={(e) => setRefundAmt(e.target.value)} />
+              <Stack spacing={2} direction="row" sx={{ mt: 1, float: "right" }}>
+                <Button onClick={() => { setOpenRefundModal(false); setRefundAmt('') }}>
+                  CANCEL
+                </Button>
+                <Button variant="contained"
+                  style={{ borderRadius: "0.25rem", boxShadow: "none" }}
+                  disabled={refundAmt.length === 0}
+                  onClick={handleRefund}
+                >
+                  CONFIRM
+                </Button>
+              </Stack>
+            </Box>
+          </Modal>
+        )
+      }
+    </>
+  );
+};
+
+Order.getLayout = function getLayout(page: React.ReactElement) {
+  return <Layout>{page}</Layout>;
+};
+
+export const getServerSideProps = (context: any) => {
+  return protectedPageRoute(context, null, async () => {
+    return {
+      props: {},
+    };
+  });
+};
+export default Order;
