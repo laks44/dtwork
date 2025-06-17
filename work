@@ -39,7 +39,6 @@ const AddMedicine = (props: any) => {
     mrpPostCheck,
     qtyCheck,
     applyOrderRefund,
-    refundCheck
   } = props;
   const [addedMedicines, setAddedMedicines] = React.useState(medList);
   const [openModal, setOpenModal] = React.useState({
@@ -235,6 +234,16 @@ const AddMedicine = (props: any) => {
 
       cell: (row: any) => (
         <Grid sx={{ display: "flex", justifyContent: "center" }}>
+          {qtyCheck && editingQtyRow?.medicineId === row?.medicineId && editQtyFlag ? (
+            <input
+              type="number"
+              value={row.quantity}
+              style={{ width: "70px" }}
+              onChange={(e) => handleQuantityChange1(e, row)}
+            />
+          ) : (
+            <Typography>{parseFloat(row.quantity).toFixed(2).toString()}</Typography>
+          )}
           <Typography>{row.quantity} </Typography>
         </Grid>
       ),
@@ -399,10 +408,6 @@ const AddMedicine = (props: any) => {
 
   //function executed when delete icon is clicked
   const handleDelete = (row) => {
-
-    const isEditingDeletedRow = editingRow?.medicineId === row.medicineId;
-    const isEditingQtyDeletedRow = editingQtyRow?.medicineId === row.medicineId;
-
     //check state indicates if availability has been checked or not, if not, then medicines are removed only from the addedMedicines list
     if (!check) {
       setAddedMedicines(
@@ -452,10 +457,9 @@ const AddMedicine = (props: any) => {
 
   // Function to handle the new price input
   const handleNewPrice = (e: any, row: any) => {
-    console.log("Looking for medicineId:", row.medicineId);
-    console.log("Current medList:", medList);
-
-    const temp = [...medList];
+    const temp = [...addedMedicines];
+    console.log("Current medList:", temp);
+    console.log("mrp1")
     const _medicine = temp.find(item => item.medicineId === row.medicineId);
     _medicine.mrp = e.target.value;
     _medicine.total = _medicine.mrp * _medicine.quantity;
@@ -471,8 +475,6 @@ const AddMedicine = (props: any) => {
 
   // Function to handle the new price input for headcell 2
   const handleNewPrice1 = (e: any, row: any) => {
-    console.log("Looking for medicineId:", row.medicineId);
-    
     console.log("mrp2")
     const temp = [...avlList];
     console.log("Current medList:", temp);
@@ -496,12 +498,31 @@ const AddMedicine = (props: any) => {
     setShowSaveQtyChangesBtn(true);
   };
 
+  const handleEditQuantity1 = (row: any) => {
+    setEditQtyFlag(true);
+    setEditingQtyRow(row);
+    setOriginalQuantity(row?.quantity);
+    setShowSaveQtyChangesBtn(true);
+  };
+
 
 
   // Function to handle the new price input for headcell 2
   const handleQuantityChange = (e: any, row: any) => {
     const newQty = parseInt(e.target.value, 10);
     const updatedList = [...addedMedicines];
+    const medicine = updatedList.find(item => item.medicineId === row.medicineId);
+    if (medicine) {
+      medicine.quantity = newQty;
+      medicine.total = medicine.mrp * newQty;
+      setAddedMedicines(updatedList);
+    }
+  };
+
+  // Function to handle the new price input for headcell 2
+  const handleQuantityChange1 = (e: any, row: any) => {
+    const newQty = parseInt(e.target.value, 10);
+    const updatedList = [...avlList];
     const medicine = updatedList.find(item => item.medicineId === row.medicineId);
     if (medicine) {
       medicine.quantity = newQty;
@@ -528,7 +549,7 @@ const AddMedicine = (props: any) => {
 
   //handle Cancel price changes
   const handleCancelChanges = () => {
-    const temp = [...medList];
+    const temp = [...addedMedicines];
     const _medicine = temp.find(item => item.medicineId === editingQtyRow.medicineId);
     _medicine.mrp = originalPrice;
     _medicine.total = _medicine.mrp * _medicine.quantity;
@@ -564,14 +585,29 @@ const AddMedicine = (props: any) => {
   //handle Cancel qty changes 
   const handleCancelQuantityChanges = () => {
     const temp = [...addedMedicines];
-    const _medicine = temp.find(item => item.medicineId === editingRow?.medicineId);
+    const _medicine = temp.find(item => item.medicineId === editingQtyRow?.medicineId);
     if (_medicine && originalQuantity !== null) {
       _medicine.quantity = originalQuantity;
       _medicine.total = _medicine.mrp * originalQuantity;
       setAddedMedicines(temp);
     }
     setEditQtyFlag(false);
-    setEditingRow(null);
+    setEditingQtyRow(null);
+    setShowSaveQtyChangesBtn(false);
+    setOriginalQuantity(null);
+  };
+
+  //handle Cancel qty changes 
+  const handleCancelQuantityChanges1 = () => {
+    const temp = [...avlList];
+    const _medicine = temp.find(item => item.medicineId === editingQtyRow?.medicineId);
+    if (_medicine && originalQuantity !== null) {
+      _medicine.quantity = originalQuantity;
+      _medicine.total = _medicine.mrp * originalQuantity;
+      setAddedMedicines(temp);
+    }
+    setEditQtyFlag(false);
+    setEditingQtyRow(null);
     setShowSaveQtyChangesBtn(false);
     setOriginalQuantity(null);
   };
@@ -608,8 +644,14 @@ const AddMedicine = (props: any) => {
     // if (Array.isArray(avlList) && avlList.length > 0) {
     //   updateList(avlList);
     // }
-    mrpPostCheck ? updateList(avlList) : updateList(addedMedicines);
-  }, [addedMedicines, avlList]);
+    if (check) {
+      updateList(avlList)
+    }
+    else {
+      updateList(addedMedicines)
+    }
+    // mrpPostCheck ? updateList(avlList) : updateList(addedMedicines);
+  }, [addedMedicines, avlList, check]);
 
   return (
     <>
@@ -826,6 +868,11 @@ const AddMedicine = (props: any) => {
               applyOrderDiscount={applyOrderDiscount}
               orderSummary={orderSummary}
               mrpPostCheck={mrpPostCheck}
+              onEditQty={handleEditQuantity1}
+              showSaveQtyChangesBtn={ShowSaveQtyChangesBtn}
+              handleCancelQtyChanges={handleCancelQuantityChanges1}
+              onSaveQtyChanges={handleSaveQuantityChanges}
+              qtyCheck={qtyCheck}
             />
           </Box>
         )}
@@ -848,319 +895,7 @@ const AddMedicine = (props: any) => {
 
 export default AddMedicine;
 
-import {
-  Box,
-  Button,
-  InputLabel,
-  TextField,
-  Typography,
-  Divider,
-} from "@mui/material";
-import Head from "next/head";
-import React from "react";
-import { Grid } from "@mui/material";
-import Link from "next/link";
-import MedicineModal from "../MedicineModal";
-import theme from "@/theme";
 
-const BottomButton = (props: any) => {
-  const {
-    buttonText,
-    link,
-    disable,
-    state,
-    addedMedicines,
-    onClickCA,
-    check,
-    avlList,
-    onClickAO,
-    onClickRO,
-    approved,
-    orderSummary,
-    onClickSD,
-    onClickMAP,
-    onClickMAD,
-    onClickCP,
-    onClickMAID,
-    onClickRST,
-    onClickPL
-  } = props;
-
-  const [openModal, setOpenModal] = React.useState(false);
-  const [disableApprove, setDisableApprove] = React.useState(false);
-  // const handleModalOpen = () => {
-  //   setOpenModal(true);
-  // };
-  // const handleModalClose = () => {
-  //   setOpenModal(false);
-  // };
-
-  React.useEffect(() => {
-    setDisableApprove(false);
-    avlList.map((med) => {
-      if (med.availableQty < med.quantity || med.availableQty === undefined) {
-        setDisableApprove(true);
-      }
-    });
-  }, [avlList]);
-
-  return (
-    <>
-      <Box
-        style={{
-          position: "sticky",
-          bottom: 0,
-          background: theme.palette.primary.light,
-          width: "100%",
-          padding: "0.5rem 1rem 0 0",
-          boxShadow: "0rem -0.125rem 0.125rem rgba(0, 0, 0, 0.1)",
-          //marginTop:'0.25rem',
-          //background:'blue'
-        }}
-      >
-        <Box
-          style={{
-            display: "flex",
-            flexDirection: "row",
-            columnGap: "2rem",
-            alignItems: "flex-end",
-            //backgroundColor: "red",
-            justifyContent: "flex-end",
-            zIndex: 2,
-            padding: "0 0 0.5rem 0",
-            margin: 0,
-            //background:'pink'
-          }}
-        >
-          {!approved &&
-            orderSummary.status !== "PAYMENT_COMPLETED" &&
-            orderSummary.status !== "OUT_STATION_DELIVERY" &&
-            orderSummary.status !== "PICKUP_CANCELLED" &&
-            orderSummary.status !== "OUT_FOR_PICKUP" && 
-            orderSummary.status !== "OUT_FOR_DELIVERY" &&
-            orderSummary.status !== "INTERNALLY_DELIVERED" && (
-              <Button
-                style={{
-                  color: "#D32F2F",
-                  fontStyle: "normal",
-                  fontWeight: 600,
-                  fontSize: "0.938rem",
-                  margin: 0,
-                }}
-                onClick={onClickRO}
-              >
-                REJECT ORDER
-              </Button>
-            )}
-
-          {!approved &&
-            orderSummary.status !== "PAYMENT_COMPLETED" &&
-            orderSummary.status !== "OUT_STATION_DELIVERY" &&
-            orderSummary.status !== "PICKUP_CANCELLED" &&
-            orderSummary.status !== "OUT_FOR_PICKUP" && 
-            orderSummary.status !== "OUT_FOR_DELIVERY" && 
-            orderSummary.status !== "INTERNALLY_DELIVERED" && 
-            (
-              <Button
-                variant="contained"
-                style={{
-                  borderRadius: "0.25rem",
-                  backgroundColor: "#FFFFFF",
-                  color: "#034EA1",
-                  border: "0.063rem solid #034EA1",
-                  fontFamily: "Roboto",
-                  fontStyle: "normal",
-                  fontWeight: 600,
-                  fontSize: "0.938rem",
-                  boxShadow: "none",
-                  margin: 0,
-                }}
-                onClick={onClickSD}
-              >
-                DRAFT RX
-              </Button>
-            )}
-
-          {orderSummary.status !== "PAYMENT_COMPLETED" &&
-            orderSummary.status !== "OUT_STATION_DELIVERY" &&
-            orderSummary.status !== "PICKUP_CANCELLED" &&
-            orderSummary.status !== "OUT_FOR_PICKUP" && 
-            orderSummary.status !== "OUT_FOR_DELIVERY" &&
-            orderSummary.status !== "INTERNALLY_DELIVERED" && (
-              <Button
-                variant="contained"
-                disabled={
-                  addedMedicines.length === 0 ||
-                  // approved || //commented for rework as it was disabling sometime
-                  disableApprove ||
-                  (check && avlList.length === 0)
-                }
-                style={{
-                  borderRadius: "0.25rem",
-                  boxShadow:
-                    "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
-                  fontFamily: "Roboto",
-                  fontStyle: "normal",
-                  fontWeight: 600,
-                  fontSize: "0.938rem",
-                  margin: 0,
-                }}
-                onClick={check ? onClickAO : onClickCA}
-              >
-                {check ? "APPROVE ORDER" : "CHECK AVAILABILITY"}
-              </Button>
-            )}
-          {orderSummary.status === "PAYMENT_COMPLETED" && (
-            <Box>
-              <Button
-                variant="contained"
-                style={{
-                  borderRadius: "0.25rem",
-                  boxShadow:
-                    "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
-                  fontFamily: "Roboto",
-                  fontStyle: "normal",
-                  fontWeight: 600,
-                  fontSize: "0.938rem",
-                  //boxShadow: "none",
-                }}
-                onClick={onClickMAP}
-              >
-                MARK AS PACKED
-              </Button>
-            </Box>
-          )}
-          {(orderSummary.status === "PAYMENT_COMPLETED" || orderSummary.status === 'INTERNALLY_DELIVERED') && (
-            <Button
-              variant="outlined"
-              style={{
-                borderRadius: "0.25rem",
-                boxShadow:
-                  "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
-                fontFamily: "Roboto",
-                fontStyle: "normal",
-                fontWeight: 600,
-                fontSize: "0.938rem",
-                //boxShadow: "none",
-                marginLeft: '0.5rem'
-              }}
-              onClick={onClickPL}
-            >
-              PRINT LABEL
-            </Button>)
-          }
-          {orderSummary.status === "OUT_STATION_DELIVERY" && (
-            <Button
-              variant="contained"
-              style={{
-                borderRadius: "0.25rem",
-                boxShadow:
-                  "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
-                fontFamily: "Roboto",
-                fontStyle: "normal",
-                fontWeight: 600,
-                fontSize: "0.938rem",
-                //boxShadow: "none",
-              }}
-              onClick={onClickMAD}
-            >
-              {/* MARK AS DELIVERED */}
-              CHOOSE ALTERNATE DELIVERY
-            </Button>
-          )}
-
-          {orderSummary.status === "OUT_FOR_DELIVERY" && (
-            <>
-              <Button
-                style={{
-                  color: "#D32F2F",
-                  fontStyle: "normal",
-                  fontWeight: 600,
-                  fontSize: "0.938rem",
-                  margin: 0,
-                }}
-                onClick={onClickRST}
-              >
-                RAISE SUPPORT TICKET
-              </Button>
-              {/* <Button
-                variant="contained"
-                style={{
-                  borderRadius: "0.25rem",
-                  boxShadow:
-                    "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
-                  fontFamily: "Roboto",
-                  fontStyle: "normal",
-                  fontWeight: 600,
-                  fontSize: "0.938rem",
-                  //boxShadow: "none",
-                }}
-                onClick={onClickCP}
-              >
-                CANCEL PICKUP
-              </Button> */}
-            </>
-          )}
-
-          {orderSummary.status === "OUT_FOR_PICKUP" && (
-            <>
-              <Button
-                style={{
-                  color: "#D32F2F",
-                  fontStyle: "normal",
-                  fontWeight: 600,
-                  fontSize: "0.938rem",
-                  margin: 0,
-                }}
-                onClick={onClickRST}
-              >
-                RAISE SUPPORT TICKET
-              </Button>
-              <Button
-                variant="contained"
-                style={{
-                  borderRadius: "0.25rem",
-                  boxShadow:
-                    "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
-                  fontFamily: "Roboto",
-                  fontStyle: "normal",
-                  fontWeight: 600,
-                  fontSize: "0.938rem",
-                  //boxShadow: "none",
-                }}
-                onClick={onClickCP}
-              >
-                CANCEL PICKUP
-              </Button>
-            </>
-          )}
-
-          {orderSummary.status === "PICKUP_CANCELLED" && (
-            <Button
-              variant="contained"
-              style={{
-                borderRadius: "0.25rem",
-                boxShadow:
-                  "0rem 0.188rem 0.063rem -0.125rem rgba(0, 0, 0, 0.2), 0px 2px 2px rgba(0, 0, 0, 0.14), 0px 1px 5px rgba(0, 0, 0, 0.12)",
-                fontFamily: "Roboto",
-                fontStyle: "normal",
-                fontWeight: 600,
-                fontSize: "0.938rem",
-                //boxShadow: "none",
-              }}
-              onClick={onClickMAID}
-            >
-              {/* MARK AS INTERNALLY DELIVERED */}
-              CHOOSE ALTERNATE DELIVERY
-            </Button>
-          )}
-        </Box>
-      </Box>
-    </>
-  );
-};
-
-export default BottomButton;
 
 import {
   Box,
@@ -1298,903 +1033,8 @@ const MedicineList = (props) => {
 
 export default MedicineList;
 
-/* eslint-disable import/no-extraneous-dependencies */
-import * as React from "react";
-import ReactDOMServer from "react-dom/server";
-import {
-  FormControl,
-  Typography,
-  Table,
-  TableContainer,
-  TableBody,
-  TableRow,
-  TableCell,
-  Box,
-  Paper,
-  MenuItem,
-  Pagination,
-  Select,
-  SelectChangeEvent,
-  Checkbox,
-  CircularProgress,
-  styled,
-  Button,
-  Modal,
-  Stack,
-} from "@mui/material";
-import styles from "./style.module.scss";
-import { Order, EnhancedTableProps, PaginatedTableProps } from "./table";
-import EnhancedTableHead from "./head";
-import Row from "./collapsible_row";
-import { getComparator, getSum, Item, stableSort } from "./helpers";
-import EnhancedTableToolbar from "./toolbar";
-import HtmlTable from "./html_table";
-import NoData from "../NoData";
-import theme from "@/theme";
-
-const PaginatedTable = (props: PaginatedTableProps) => {
-  const [order, setOrder] = React.useState<Order>("asc");
-  const [orderBy, setOrderBy] = React.useState<string>("");
-  const [selected, setSelected] = React.useState<readonly string[]>([]);
-  const [page, setPage] = React.useState(0);
-  const [totalColSpan, setTotalColSpan] = React.useState(0);
-  const [rowsPerPage, setRowsPerPage] = React.useState<any>(10);
-  const [htmlTable, setHtmlTable] = React.useState("");
-  const [isPrintClicked, setPrintClicked] = React.useState(false);
-  const [isExcelClicked, setExcelClicked] = React.useState(false);
-
-  const [open, setOpen] = React.useState(false);
-  const [openQtyModal, setOpenQtyModal] = React.useState(false);
-  const handleOpen = () => setOpen(true);
-  const handleClose = () => setOpen(false);
-  const handleOpenQtyModal = () => setOpenQtyModal(true);
-  const handleCloseQtyModal = () => setOpenQtyModal(false);
 
 
-  const {
-    expandable,
-    expandInCols,
-    serialNo,
-    rows,
-    headCells,
-    pagination,
-    expandIconAt,
-    selectable,
-    uniqueKey,
-    actions,
-    loading,
-    tableRef,
-    tableTitle,
-    excelFileName,
-    order: orderProps,
-    orderBy: orderByProps,
-    showTotal,
-    totalLength,
-    setPageNumberClicked,
-    setRecordsToShow,
-    customRowPerPage,
-    serialNoName,
-    avlCheck,
-    discountButton,
-    discountStatus,
-    removeOrderDiscount,
-    applyOrderDiscount,
-    orderSummary,
-    showSaveChangesBtn,
-    onSaveChanges,
-    handleCancelChanges,
-    applyOrderRefund,
-    showSaveQtyChangesBtn,
-    onSaveQtyChanges,
-    handleCancelQtyChanges,
-    refundCheck
-  } = props;
-
-  const lengthOfData: any = totalLength || rows.length;
-
-  React.useEffect(() => {
-    if (customRowPerPage) {
-      setRecordsToShow && setRecordsToShow(customRowPerPage);
-      setRowsPerPage(customRowPerPage);
-    } else {
-      setRecordsToShow && setRecordsToShow(rowsPerPage);
-    }
-  }, [rowsPerPage]);
-
-  React.useEffect(() => {
-    setTotalColSpan(
-      1 +
-      (selectable ? 1 : 0) +
-      (serialNo ? 1 : 0) +
-      (expandIconAt === "start" ? 1 : 0)
-    );
-  }, [showTotal]);
-
-  React.useEffect(() => {
-    if (orderProps) setOrder(orderProps);
-  }, [orderProps]);
-
-  React.useEffect(() => {
-    if (orderByProps) setOrderBy(orderByProps);
-  }, [orderByProps]);
-
-  const rowsPerPageDropdown: Array<{ page: number; label: string }> = [
-    { page: 5, label: "5" },
-    { page: 10, label: "10" },
-    { page: 15, label: "15" },
-    { page: 25, label: "25" },
-    { page: 50, label: "50" },
-    {
-      page: totalLength ? 100 : rows?.length,
-      label: totalLength ? "100" : "All",
-    },
-  ];
-
-  React.useEffect(() => {
-    if (headCells && rows) {
-      const htmlTableSample = ReactDOMServer.renderToString(
-        <HtmlTable
-          headCells={headCells}
-          rows={rows}
-          uniqueKey={uniqueKey}
-          title={tableTitle}
-        />
-      );
-      setHtmlTable(htmlTableSample);
-    }
-  }, [rows, headCells]);
-
-  React.useEffect(() => {
-    if (isPrintClicked) {
-      const printWindow = window.open("", "", "width=800,height=600");
-      if (printWindow) {
-        printWindow.document.write(htmlTable);
-        printWindow.document.close();
-        setTimeout(() => {
-          printWindow.focus();
-          printWindow.print();
-        }, 500);
-      }
-    }
-  }, [isPrintClicked]);
-
-  const base64 = (s: any) => window.btoa(unescape(encodeURIComponent(s)));
-
-  React.useEffect(() => {
-    if (isExcelClicked) {
-      const uri = "data:application/vnd.ms-excel;base64,";
-      const template = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>${excelFileName}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--><meta http-equiv="content-type" content="text/plain; charset=UTF-8"/></head><body>
-      ${htmlTable}
-      </body></html>`;
-      const a = window.document.createElement("a");
-      a.href = uri + base64(template);
-      a.download = `${excelFileName}.xls`;
-      a.click();
-    }
-  }, [isExcelClicked]);
-
-  const print = () => {
-    setPrintClicked(true);
-  };
-
-  const exportToExcel = () => {
-    setExcelClicked(true);
-  };
-
-  React.useEffect(() => {
-    if (tableRef) tableRef.current = { print, exportToExcel };
-  }, []);
-
-  React.useEffect(() => {
-    !totalLength && setPage(0);
-    if (!pagination) setRowsPerPage(lengthOfData);
-  }, [rows, pagination]);
-
-  const handleRequestSort = (
-    event: React.MouseEvent<unknown>,
-    property: string
-  ) => {
-    const isAsc = orderBy === property && order === "asc";
-    setOrder(isAsc ? "desc" : "asc");
-    setOrderBy(property);
-  };
-
-  const handleSelectAllClick = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.checked) {
-      const newSelecteds = rows.map((n) => n[uniqueKey].toString());
-      setSelected(newSelecteds);
-      return;
-    }
-    setSelected([]);
-  };
-
-  const handleChangePage = (event: unknown, newPage: number) => {
-    setPage(newPage - 1);
-    setPageNumberClicked && setPageNumberClicked(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: SelectChangeEvent) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setRecordsToShow && setRecordsToShow(parseInt(event.target.value, 10));
-    !totalLength && setPage(0);
-  };
-
-  const handleClick = (event: React.MouseEvent<unknown>, name: string) => {
-    const selectedIndex = selected.indexOf(name);
-    let newSelected: readonly string[] = [];
-
-    if (selectedIndex === -1) {
-      newSelected = newSelected.concat(selected, name);
-    } else if (selectedIndex === 0) {
-      newSelected = newSelected.concat(selected.slice(1));
-    } else if (selectedIndex === selected.length - 1) {
-      newSelected = newSelected.concat(selected.slice(0, -1));
-    } else if (selectedIndex > 0) {
-      newSelected = newSelected.concat(
-        selected.slice(0, selectedIndex),
-        selected.slice(selectedIndex + 1)
-      );
-    }
-    setSelected(newSelected);
-  };
-
-  const isSelected = (name: string) => selected.indexOf(name) !== -1;
-
-  // Avoid a layout jump when reaching the last page with empty rows.
-  const emptyRows =
-    page > 0 ? Math.max(0, (1 + page) * rowsPerPage - lengthOfData) : 0;
-
-
-  const style = {
-    position: "absolute" as "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    width: 600,
-    bgcolor: "background.paper",
-    boxShadow: 24,
-    p: 4,
-  };
-
-  return (
-    <Box sx={{ width: "100%" }}>
-      {selected.length > 0 && (
-        <EnhancedTableToolbar
-          actions={actions}
-          selected={selected}
-          numSelected={selected.length}
-        />
-      )}
-      <Paper
-        elevation={2}
-        sx={{
-          borderRadius: ".5rem",
-          boxShadow: "none",
-          border: "1px solid #ECECEC",
-        }}
-      >
-        <TableContainer sx={{ borderRadius: ".5rem" }}>
-          <Table sx={{ minWidth: 750 }} size="small" stickyHeader>
-            <EnhancedTableHead
-              order={order}
-              orderBy={orderBy}
-              onRequestSort={handleRequestSort}
-              headCells={headCells}
-              serialNo={serialNo}
-              expandIconAt={expandIconAt}
-              selectable={selectable}
-              onSelectAllClick={handleSelectAllClick}
-              numSelected={selected.length}
-              rowCount={lengthOfData}
-              serialNoName={serialNoName}
-            />
-            <TableBody>
-              {/* if you don't need to support IE11, you can replace the `stableSort` call with:
-              rows.slice().sort(getComparator(order, orderBy)) */}
-              {totalLength &&
-                stableSort(rows, getComparator(order, orderBy)).map(
-                  (row, index) => {
-                    const isItemSelected: any = isSelected(
-                      row[uniqueKey]?.toString()
-                    );
-                    return expandable ? (
-                      <Row
-                        key={`${page * rowsPerPage + index + 1}`}
-                        row={row}
-                        headCells={headCells}
-                        expand={expandable}
-                        expandInCols={expandInCols}
-                        expandIconAt={expandIconAt}
-                        serialNo={
-                          serialNo ? page * rowsPerPage + index + 1 : undefined
-                        }
-                        selectable={
-                          selectable && (
-                            <TableCell
-                              className={styles.stickyLeft}
-                              key={`checkbox-${index + 1}`}
-                              padding="checkbox"
-                              sx={{ p: "1rem", left: 0, textAlign: "center" }}
-                            >
-                              <Checkbox
-                                color="primary"
-                                checked={isItemSelected}
-                                onClick={(event) =>
-                                  handleClick(event, row[uniqueKey].toString())
-                                }
-                              />
-                            </TableCell>
-                          )
-                        }
-                      />
-                    ) : (
-                      <TableRow key={`${page * rowsPerPage + index + 1}`}>
-                        {selectable && (
-                          <TableCell padding="checkbox" sx={{ p: "1rem" }}>
-                            <Checkbox
-                              color="primary"
-                              checked={isItemSelected}
-                              onClick={(event) =>
-                                handleClick(event, row[uniqueKey].toString())
-                              }
-                            />
-                          </TableCell>
-                        )}
-                        {serialNo && (
-                          <TableCell>
-                            {page * rowsPerPage + index + 1}
-                          </TableCell>
-                        )}
-                        {headCells.map((headCell) => (
-                          <TableCell
-                            className={
-                              headCell.stickyClass
-                                ? styles[headCell.stickyClass]
-                                : ""
-                            }
-                            sx={{
-                              fontSize: "0.875rem",
-                              left: headCell.stickyAt,
-                              right: headCell.stickyAt,
-                              padding: "2rem",
-                            }}
-                            key={headCell.id}
-                          >
-                            {headCell.cell
-                              ? headCell.cell(row)
-                              : row[headCell.id]}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    );
-                  }
-                )}
-              {!totalLength &&
-                stableSort(rows, getComparator(order, orderBy))
-                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((row, index) => {
-                    const isItemSelected: any = isSelected(
-                      row[uniqueKey]?.toString()
-                    );
-                    return expandable ? (
-                      <Row
-                        key={`${page * rowsPerPage + index + 1}`}
-                        row={row}
-                        headCells={headCells}
-                        expand={expandable}
-                        expandInCols={expandInCols}
-                        expandIconAt={expandIconAt}
-                        serialNo={
-                          serialNo ? page * rowsPerPage + index + 1 : undefined
-                        }
-                        selectable={
-                          selectable && (
-                            <TableCell
-                              className={styles.stickyLeft}
-                              key={`checkbox-${index + 1}`}
-                              padding="checkbox"
-                              sx={{ p: "1rem", left: 0, textAlign: "center" }}
-                            >
-                              <Checkbox
-                                color="primary"
-                                checked={isItemSelected}
-                                onClick={(event) =>
-                                  handleClick(event, row[uniqueKey].toString())
-                                }
-                              />
-                            </TableCell>
-                          )
-                        }
-                      />
-                    ) : (
-                      <TableRow
-                        key={`${page * rowsPerPage + index + 1}`}
-                        sx={
-                          index % 2 === 0
-                            ? { backgroundColor: "rgba(0, 0, 0, 0.02)" }
-                            : {}
-                        }
-                      >
-                        {selectable && (
-                          <TableCell padding="checkbox" sx={{ p: "1rem" }}>
-                            <Checkbox
-                              color="primary"
-                              checked={isItemSelected}
-                              onClick={(event) =>
-                                handleClick(event, row[uniqueKey].toString())
-                              }
-                            />
-                          </TableCell>
-                        )}
-                        {serialNo && (
-                          <TableCell>
-                            {page * rowsPerPage + index + 1}
-                          </TableCell>
-                        )}
-                        {headCells.map((headCell, i) => (
-                          <TableCell
-                            className={
-                              headCell.stickyClass
-                                ? styles[headCell.stickyClass]
-                                : ""
-                            }
-                            sx={{
-                              fontSize: "0.875rem",
-                              left: headCell.stickyAt,
-                              right: headCell.stickyAt,
-                              pl: 1,
-                            }}
-                            key={headCell.id}
-                          >
-                            {headCell.cell
-                              ? headCell.cell(row)
-                              : row[headCell.id]}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    );
-                  })}
-              {emptyRows > 0 && (
-                <TableRow
-                  style={{
-                    height: 53 * emptyRows,
-                  }}
-                  sx={{
-                    fontSize: "0.875rem",
-                  }}
-                >
-                  <TableCell colSpan={headCells.length} />
-                </TableRow>
-              )}
-              {!loading && lengthOfData <= 0 && (
-                <TableRow
-                  style={{
-                    height: 53 * 5,
-                  }}
-                  sx={{
-                    fontSize: "0.875rem",
-                  }}
-                >
-                  <TableCell
-                    colSpan={headCells.length}
-                    sx={{ textAlign: "center" }}
-                  >
-                    <NoData
-                      //image="images/no-data.png"
-                      image="images/NoData.png"
-                      msgHead="No Data Available"
-                      msgSubHead=""
-                    />
-                  </TableCell>
-                </TableRow>
-              )}
-              {loading && rows.length <= 0 && (
-                <TableRow
-                  sx={{
-                    fontSize: "0.875rem",
-                    height: 53 * 3,
-                  }}
-                >
-                  <TableCell
-                    colSpan={
-                      headCells.length +
-                      (serialNo ? 1 : 0) +
-                      (expandable ? 1 : 0)
-                    }
-                    sx={{ textAlign: "center" }}
-                  >
-                    <CircularProgress />
-                  </TableCell>
-                </TableRow>
-              )}
-              {!pagination && showTotal && (
-                <TableRow
-                  sx={{
-                    backgroundColor: (theme) => theme.palette.grey[50],
-                    alignItems: "center",
-                    borderRadius: "0 0 0.5rem 0.5rem",
-                  }}
-                >
-                  <TableCell
-                    colSpan={totalColSpan + 1}
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      width: "350px",
-                    }}
-                  >
-                    <Typography
-                      sx={{
-                        textAlign: "left",
-                        fontWeight: 700,
-                        color: "#000",
-                        mr: 2,
-                      }}
-                    >
-                      Total Amount
-                    </Typography>
-                    {(orderSummary?.status === "OPEN" || orderSummary?.status === "SAVED_FOR_LATER") && avlCheck && discountButton &&
-                      (<Button
-                        //disabled={}
-                        variant="contained"
-                        onClick={
-                          discountStatus
-                            ? removeOrderDiscount
-                            : applyOrderDiscount
-                        }
-                        sx={{
-                          textAlign: "left",
-                          color: "#fff",
-                          textTransform: "capitalize",
-                          p: 0.9,
-                          width: "175px",
-                        }}
-                      >
-                        {discountStatus ? "Remove Discount" : "Apply Discount"}
-                      </Button>)
-                    }
-                    {
-                      ((orderSummary?.status === "PAYMENT_COMPLETED" || orderSummary?.status === "INTERNALLY_DELIVERED") && orderSummary?.isRefundable==false) && (
-                        <Button
-                          variant="contained"
-                          sx={{
-                            textAlign: "left",
-                            color: "#fff",
-                            textTransform: "capitalize",
-                            p: 0.9,
-                            width: "175px",
-                          }}
-                          onClick={applyOrderRefund}
-                        >
-                          INTIATE REFUND
-                        </Button>
-                      )
-                    }
-
-                    {
-                      showSaveChangesBtn &&
-                      <Button
-                        variant="contained"
-                        sx={{
-                          textAlign: "left",
-                          color: "#fff",
-                          textTransform: "capitalize",
-                          p: 0.9,
-                          width: "175px"
-                        }}
-                        onClick={handleOpen}
-                      >SAVE CHANGES
-                      </Button>
-                    }
-                    {
-                    /* Open modal to confirm for save price changes */}
-                    <Modal
-                      open={open}
-                      onClose={handleClose}
-                      aria-labelledby="modal-modal-title"
-                      aria-describedby="modal-modal-description"
-                      sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}
-                    >
-                      <Box sx={style}>
-                        <Typography id="modal-modal-title" variant="h6" component="h2">
-                          Do you want to update the MRP?
-                        </Typography>
-                        <Stack spacing={2} direction="row" sx={{ mt: 1, float: "right" }}>
-                          <Button onClick={() => { setOpen(false); handleCancelChanges() }}>
-                            CANCEL
-                          </Button>
-                          <Button variant="contained" onClick={() => { setOpen(false); onSaveChanges() }}
-                            style={{ borderRadius: "0.25rem", boxShadow: "none" }}
-                          >
-                            CONFIRM
-                          </Button>
-                        </Stack>
-                      </Box>
-                    </Modal>
-
-                    {
-                      showSaveQtyChangesBtn && (
-                        <Button
-                          variant="contained"
-                          sx={{
-                            textAlign: "left",
-                            color: "#fff",
-                            textTransform: "capitalize",
-                            p: 0.9,
-                            width: "175px"
-                          }}
-                          onClick={handleOpenQtyModal}
-                        >
-                          SAVE QUANTITY
-                        </Button>
-                      )
-                    }
-
-                    <Modal
-                      open={openQtyModal}
-                      onClose={handleCloseQtyModal}
-                      aria-labelledby="modal-qty-title"
-                      aria-describedby="modal-qty-description"
-                      sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}
-                    >
-                      <Box sx={style}>
-                        <Typography id="modal-qty-title" variant="h6" component="h2">
-                          Do you want to update the quantity?
-                        </Typography>
-                        <Stack spacing={2} direction="row" sx={{ mt: 1, float: "right" }}>
-                          <Button onClick={() => { setOpenQtyModal(false); handleCancelQtyChanges(); }}>
-                            CANCEL
-                          </Button>
-                          <Button
-                            variant="contained"
-                            onClick={() => { setOpenQtyModal(false); onSaveQtyChanges(); }}
-                            style={{ borderRadius: "0.25rem", boxShadow: "none" }}
-                          >
-                            CONFIRM
-                          </Button>
-                        </Stack>
-                      </Box>
-                    </Modal>
-
-                  </TableCell>
-                  {React.Children.toArray(
-                    headCells.map((headCell, i) => {
-                      if (headCell.numeric) {
-                        return (
-                          <TableCell
-                            sx={{
-                              fontWeight: 700,
-                              p: 1,
-                              display: "flex",
-                              justifyContent: "center",
-                            }}
-                          >
-                            {getSum(rows, headCell.id)}
-                          </TableCell>
-                        );
-                      }
-                      if (i !== 0) return <TableCell />;
-                      return false;
-                    })
-                  )}
-                  {expandIconAt === "end" && <TableCell />}
-                </TableRow>
-              )}
-              {!pagination && showTotal && orderSummary?.isRefundable === true && (avlCheck || (orderSummary?.status !== "OPEN" && orderSummary?.status !== "SAVED_FOR_LATER" && (orderSummary?.status === "PAYMENT_COMPLETED" || orderSummary?.status === "INTERNALLY_DELIVERED" || orderSummary?.status === "DELIVERED"))) && (
-                <TableRow
-                  sx={{
-                    backgroundColor: (theme) => theme.palette.grey[50],
-                    alignItems: "center",
-                    borderRadius: "0 0 0.5rem 0.5rem",
-                  }}
-                >
-                  <TableCell
-                    colSpan={totalColSpan - 1}
-                    sx={{ display: "flex", alignItems: "center" }}
-                  >
-                    <Typography
-                      sx={{
-                        textAlign: "left",
-                        fontWeight: 700,
-                        color: "#000",
-                        mr: 2,
-                      }}
-                    >
-                      Refunded Amount
-                    </Typography>
-                  </TableCell>
-                  {React.Children.toArray(
-                    headCells.map((headCell, i) => {
-                      if (headCell.numeric) {
-                        return (
-                          <TableCell
-                            sx={{
-                              fontWeight: 700,
-                              p: 1,
-                              display: "flex",
-                              justifyContent: "center",
-                            }}
-                          >
-                            {orderSummary?.refundedAmount}
-                          </TableCell>
-                        );
-                      }
-                      if (i !== 0) return <TableCell />;
-                      return false;
-                    })
-                  )}
-                  {expandIconAt === "end" && <TableCell />}
-                </TableRow>
-
-              )}
-              {!pagination && showTotal && orderSummary?.isDiscountable === true && (avlCheck || (orderSummary?.status !== "OPEN" && orderSummary?.status !== "SAVED_FOR_LATER")) && (
-                <TableRow
-                  sx={{
-                    backgroundColor: (theme) => theme.palette.grey[50],
-                    alignItems: "center",
-                    borderRadius: "0 0 0.5rem 0.5rem",
-                  }}
-                >
-                  <TableCell
-                    colSpan={totalColSpan - 2}
-                    sx={{ display: "flex", alignItems: "center" }}
-                  >
-                    <Typography
-                      sx={{
-                        textAlign: "left",
-                        fontWeight: 700,
-                        color: "#000",
-                        mr: 2,
-                      }}
-                    >
-                      Discounted
-                    </Typography>
-                  </TableCell>
-                  {React.Children.toArray(
-                    headCells.map((headCell, i) => {
-                      if (headCell.numeric) {
-                        return (
-                          <TableCell
-                            sx={{
-                              fontWeight: 700,
-                              p: 1,
-                              display: "flex",
-                              justifyContent: "center",
-                              width: '150px'
-                            }}
-                          >
-                            {`${orderSummary?.discountRate}% ( ₹${(
-                              (parseInt(orderSummary?.discountRate) / 100) *
-                              parseInt(orderSummary?.totalAmount)
-                            ).toFixed(2)})`}
-                          </TableCell>
-                        );
-                      }
-                      if (i !== 0) return <TableCell />;
-                      return false;
-                    })
-                  )}
-                  {expandIconAt === "end" && <TableCell />}
-                </TableRow>
-              )}
-              {!pagination && showTotal && (orderSummary?.isDiscountable === true || orderSummary?.isRefundable === true) && (avlCheck || (orderSummary?.status !== "OPEN" && orderSummary?.status !== "SAVED_FOR_LATER")) && (
-                <TableRow
-                  sx={{
-                    backgroundColor: (theme) => theme.palette.grey[50],
-                    alignItems: "center",
-                    borderRadius: "0 0 0.5rem 0.5rem",
-                  }}
-                >
-                  <TableCell
-                    colSpan={totalColSpan - 1}
-                    sx={{ display: "flex", alignItems: "center" }}
-                  >
-                    <Typography
-                      sx={{
-                        textAlign: "left",
-                        fontWeight: 700,
-                        color: "#000",
-                        mr: 2,
-                      }}
-                    >
-                      Grand Total
-                    </Typography>
-                  </TableCell>
-                  {React.Children.toArray(
-                    headCells.map((headCell, i) => {
-                      if (headCell.numeric) {
-                        return (
-                          <TableCell
-                            sx={{
-                              fontWeight: 700,
-                              p: 1,
-                              display: "flex",
-                              justifyContent: "center",
-                            }}
-                          >
-                            {orderSummary?.amount}
-                          </TableCell>
-                        );
-                      }
-                      if (i !== 0) return <TableCell />;
-                      return false;
-                    })
-                  )}
-                  {expandIconAt === "end" && <TableCell />}
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        {pagination && (
-          <Box
-            sx={{
-              display: "flex",
-              backgroundColor: "#ffffff",
-              alignItems: "center",
-              borderRadius: "0 0 0.5rem 0.5rem",
-            }}
-          >
-            <Item sx={{ flexGrow: 1, pl: "1rem" }}>
-              <Typography variant="body2">
-                {page + 1}-{rowsPerPage} of {lengthOfData}
-              </Typography>
-            </Item>
-            <Item>
-              <Typography variant="body2">Rows per page</Typography>
-            </Item>
-            <Item>
-              <FormControl sx={{ minWidth: 50 }} size="small">
-                <Select
-                  labelId="rows-per-page"
-                  id="rows-per-page"
-                  value={rowsPerPage.toString()}
-                  onChange={handleChangeRowsPerPage}
-                  size="small"
-                  style={{ backgroundColor: "#FFFFFF" }}
-                >
-                  {rowsPerPageDropdown.map(
-                    (val: { page: number; label: string }) => (
-                      <MenuItem key={val.page} value={val.page}>
-                        {val.label}
-                      </MenuItem>
-                    )
-                  )}
-                </Select>
-              </FormControl>
-            </Item>
-            <Item>
-              <Pagination
-                count={Math.ceil(lengthOfData / rowsPerPage)}
-                onChange={handleChangePage}
-                page={page + 1}
-                color="primary"
-                shape="circular"
-                size="small"
-                // showFirstButton
-                // showLastButton
-                siblingCount={0}
-                boundaryCount={2}
-              />
-            </Item>
-          </Box>
-        )}
-      </Paper>
-    </Box>
-  );
-};
-
-PaginatedTable.defaultProps = {
-  pagination: true,
-  serialNo: false,
-  selectable: false,
-  expandIconAt: "start",
-  uniqueKey: "id",
-  actions: [],
-  loading: false,
-  avlCheck: false,
-};
-export default PaginatedTable;
 
 
 import Layout from "@/components/Layout";
@@ -2425,6 +1265,9 @@ const Order: NextPageWithLayout = (props: any) => {
       setAvailabilityChecked(true);
       setMrpPostCheck(true)
       setQtyCheck(false)
+            if (orderSummary?.isDiscountable === true) {
+        removeOrderDiscount()
+      }
       setTimeout(() => {
         //setOpenModal(false);
         handleModalClose();
@@ -3190,7 +2033,6 @@ const Order: NextPageWithLayout = (props: any) => {
   //initiate refund
   const applyOrderRefund = () => {
     setOpenRefundModal(true)
-    // setIsRefund(true);
   }
 
   const handleRefund = async () => {
@@ -3199,7 +2041,6 @@ const Order: NextPageWithLayout = (props: any) => {
       refundedAmount: refundAmt,
       isRefundable: true
     })
-    console.log(orderSummary?.isRefundable)
     if (res?.status === 200) {
       setOpenRefundModal(false)
       setRefundAmt('')
@@ -3282,7 +2123,6 @@ const Order: NextPageWithLayout = (props: any) => {
                   mrpPostCheck={mrpPostCheck}
                   qtyCheck={qtyCheck}
                   applyOrderRefund={applyOrderRefund}
-                  refundCheck = {isRefund}
                 />
               </Grid>
               {prescriptionList.length !== 0 && (
