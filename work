@@ -1,797 +1,3334 @@
-import React from "react";
+//This is landing page of caller agent persona
+// Import necessary components and modules from external libraries and files.
+import CustomLabel from "@/components/CustomLabel";
+import Layout from "@/components/Layout";
+import CallerAgentList from "@/components/CallerAgentList";
+import protectedPageRoute from "@/helper/requireAuthentication";
 import {
   Box,
-  TextField,
-  Grid,
-  Button,
-  Select,
-  MenuItem,
+  Tab,
+  Tabs,
+  TabProps,
   FormControl,
   InputLabel,
-  Divider,
-  CircularProgress,
+  MenuItem,
+  TextField,
+  Stack,
+  Button,
   Modal,
-  Typography
+  Typography,
+  Collapse,
+  Tooltip,
+  Menu,
 } from "@mui/material";
-import { useFormik } from "formik";
-import * as Yup from "yup";
-import { addAddressAPI, editAddressAPI } from "@/modules";
-import countries from "../helpers/countries.json";
+
+import Image from "next/image";
+import React, { useEffect, useState } from "react";
+import { NextPageWithLayout } from "../_app";
+import { styled } from "@mui/system";
+import { captureResponsePaymentPending, closeLeadPaymentPending, enableDND, getConversionPendingCount, getGeneralLeadsOrderCount, getHighValueOrderCount, getPaymentPendingUsers, getRefillStatusCount, getUnitList, saveCallCenterData, unlockCallCenterOrder } from "@/modules";
+import theme from "@/theme";
+import PageContainer from "ui/common/containers/PageContainer";
 import { useRouter } from "next/router";
 import { getCookie } from "cookies-next";
+import Select, { SelectChangeEvent } from "@mui/material/Select";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import dayjs from "dayjs";
+import "dayjs/locale/en-gb";
+import tick from "../../../public/images/blueTick.png";
+import CallerAgentRefillReminder from "@/components/CallerAgentRefillReminder";
+import ConversionPending from "@/components/ConversionPending";
+import HighValueOrder from "@/components/HighValueOrder";
+import DispositionFormCA from "@/components/DispositionFormCA";
+import exportFromJSON from 'export-from-json';
+import GeneralLeadsOrder from "@/components/GeneralLeadsOrder";
+import { decryptToken } from "@/helper";
+import jwtDecode from "jwt-decode";
+import Reports from "@/components/Reports";
+import { handleApiError } from "@/utils/handleApiError";
 
-import theme from "@/theme";
-import Image from 'next/image';
-import tick from "../../public/images/Tick.png"
-import AutocompleteAddress from "./AutocompleteAddress";
-import DetectCurrentLocation from "./DetectCurrentLocation";
+// Define a type for the props of the StyledTab component.
+interface StyledTabProps extends TabProps {
+  selected?: boolean;
+}
 
-//This is the address form that appears when user clicks add address/edit address
+// Define the CallerAgent functional component.
+const CallerAgent: NextPageWithLayout = () => {
+  // Define the StyledTab component using the styled function.
+  const StyledTab = styled(Tab, {
+    shouldForwardProp: (prop) => prop !== "selected",
+  })<StyledTabProps>(({ theme, selected }) => ({
+    // Custom styling for the StyledTab component.
+    // "&.Mui-selected": { backgroundColor: "rgba(3, 78, 161, 0.08)" },
+    "&.MuiTab-root:hover": {
+      backgroundColor: !selected && "rgba(0, 0, 0, 0.04)",
+    },
+    background: selected ? "rgba(3, 78, 161, 0.08)" : "transparent",
+    boxShadow: "0.0625rem 0.0625rem 0.0625rem rgba(0, 0, 0, 0.12)",
+    width: "14rem",
+    alignItems: "start",
+  }));
 
-const AddressForm = (props: any) => {
-  const { data, addAddres, phoneNum, phoneFHeader } = props;
-  const [event, setEvent] = React.useState<any>();
-  const [loader, setLoader] = React.useState<boolean>(false);
-  const [open, setOpen] = React.useState<boolean>(false)
-  const [postalData, setPostalData] = React.useState('')
-  const [cityData, setCityData] = React.useState('')
-  const [stateData, setStateData] = React.useState('')
-  const [addressData, setAddressData] = React.useState('')
+  // Style object for the modal.
+  const style = {
+    position: 'absolute' as 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    bgcolor: 'background.paper',
+    width: '594px',
+    p: 4,
+    // '& .MuiBackdrop-root': { backgroundColor: 'transparent' }
 
+  };
 
+  // Function that defines an expandable menu.
+  const ExpandableMenu = () => {
+    return (
+      <Box sx={{
+        "& .css-xq5j3s-MuiButtonBase-root-MuiTab-root": {
+          opacity: "1 !important"
+        }
+      }}>
+        {/* Content of the expandable menu. */}
+        <Tooltip title="Leads where the customer has set a date for refill" placement="right" arrow>
+          <StyledTab selected={["REFILL_REMINDERS", "REJECTED", "NO_RESPONSE"].includes(selectedTabMenu)} label={<CustomLabel isExpandable isExpanded={expandMenu} label={"REFILL_REMINDERS"} value={tabs[1].value} />} value={"REFILL_REMINDERS"} onClick={(e) => onTabMenuClick("REFILL_REMINDERS")} />
+        </Tooltip>
+
+        <Collapse in={expandMenu}>
+          <Tooltip title="Leads where the customer has rejected the refill" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["REJECTED"].includes(selectedTabMenu)} label={<CustomLabel label={"REJECTED"} value={tabs[2].value} isSubMenu />} value={"REJECTED"} onClick={(e) => onTabMenuClick("REJECTED")} />
+            </Box>
+          </Tooltip>
+
+          <Tooltip title="Leads where the customer has not responded/taken action for the refill" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["NO_RESPONSE"].includes(selectedTabMenu)} label={<CustomLabel label={"NO_RESPONSE"} value={tabs[3].value} isSubMenu />} value={"NO_RESPONSE"} onClick={(e) => onTabMenuClick("NO_RESPONSE")} />
+            </Box>
+          </Tooltip>
+
+        </Collapse>
+      </Box>
+    )
+  }
+
+  // An array of tabs for the CallerAgent component.
+  const callerAgentTabs: any[] = [
+    { key: 'PAYMENTS_PENDING', value: 0, option: "" },
+    { key: 'REFILL_REMINDERS', value: 0, option: "ALL", expandable: true },
+    { key: 'REJECTED', value: 0, option: "rejected" },
+    { key: 'NO_RESPONSE', value: 0, option: "noResponse" },
+    { key: 'CONVERSION_PENDING', value: 0, option: "" },
+    { key: 'HIGH_VALUE_ORDER', value: 0, option: "" },
+    { key: 'GENERAL_LEADS', value: 0, option: "" },
+    { key: 'REPORTS', value: '', option: "" }
+  ]
+
+  // Define local state variables using the `useState` hook.
+  const [tabs, setTabs] = useState<any[]>(callerAgentTabs);
+  const [expandMenu, setExpandMenu] = useState<boolean>(false);
+  const [query, setQuery] = useState<any>([]);
+  const [tableData, setTableData] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [paymentspending, setPaymentspending] = useState<number>(0);
+  const [totalRecords, setTotalRecords] = useState<any>();
+  const [pageNumberClicked, setPageNumberClicked] = useState<any>(1);
+  const [recordsToShow, setRecordsToShow] = useState<any>(10);
+  const [leadStatus, setLeadStatus] = useState<any>("ALL");
+  const [dateValue, setDateValue] = useState<any>(null);
+  const [modifiedDate, setModifiedDate] = useState<string>("");
+  const [open, setOpen] = useState<boolean>(false);
+  const [selectedTabMenu, setSelectedTabMenu] = useState<any>('PAYMENTS_PENDING');
+  const [valueCapture, setValueCapture] = useState<any>('yes');
+  const [responseText, setResponseText] = useState<any>('')
+  const [rowData, setRowData] = useState<any>([])
+  const [valueFollowups, setValueFollowups] = useState<any>('require more follow ups')
+  const [openLead, setOpenLead] = useState<boolean>(false)
+  const [rowDataLead, setRowDataLead] = useState<any>([])
+  const [openChildCloseLead, setOpenChildCloseLead] = useState<boolean>(false)
+  const [pendingUsersData, setPendingUsersData] = useState<any[]>([])
+  const [approvedDate, setApprovedDate] = useState<any>('')
+  const [conversionTabCount, setConversionTabCount] = React.useState('')
+  const [highOrderValueTabCount, setHighOrderValueCountData] = React.useState('')
+  const [generalLeadsOrderValueTabCount, setGeneralLeadsValueTabCount] = React.useState('')
+  const [dept, setDept] = useState<any>("ALL");
+  const [orderDirection, setOrderDirection] = React.useState<any>('')
+  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+  const openSortingMenu = Boolean(anchorEl);
+  const [render, setRender] = useState<boolean>(false)
+  const [openSDModal, setOpenSDModal] = React.useState<any>(false)
+  const [saveDataFrom, setSaveDataFrom] = React.useState<any>(null)
+  const [saveDataTo, setSaveDataTo] = React.useState<any>(null)
+  const [jsonDataToSave, setJsonDataToSave] = React.useState<any>([])
+  const [unit, setUnit] = React.useState<any>("ALL")
+  const [unitData, setUnitData] = React.useState<any>([])
+  const [pdfModalOpen, setPdfModalOpen] = React.useState<any>(false)
+  const [countRecords, setCountRecords] = React.useState<any>(0)
+  const [isCallCenterAdmin, setIsCallCenterAdmin] = React.useState<any>(false)
 
   const router = useRouter();
-  //All filed validations
-  const validation = useFormik({
-    enableReinitialize: true,
-    initialValues: {
-      country: (event && !addAddres && event.country) || "India",
-      fullName: (event && !addAddres && event.fullName) || "",
-      company: (event && !addAddres && event.company) || "",
-      address: (event && !addAddres && event.line && event.line.join(", ")) || addressData,
-      apartment: (event && !addAddres && event.apartment) || "",
-      pincode: (event && !addAddres && event.pincode) || "" || postalData,
-      city: (event && !addAddres && event.city) || "" || cityData,
-      state: (event && !addAddres && event.state) || "" || stateData,
-      mobile: (event && (!addAddres ? event.mobile : event.mobileNo)) || phoneNum?.mobileNo || phoneFHeader,
-    },
-    validationSchema: Yup.object({
-      country: Yup.string().required("This field is required"),
-      fullName: Yup.string()
-        .matches(
-          ///^[a-zA-Z\s.]+$/,
-          /^[^<]+$/,
-          'Please provide correct input for name'
-        )
-        .required("This field is required"),
-      company: Yup
-        .string()
-        .nullable()
-        .optional()
-        .matches(
-          ///^[a-zA-Z0-9\s.,-]+$/,
-          /^[^<]+$/,
-          'Please provide correct input for company'
-        ),
-      address: Yup.string()
-        .matches(
-          ///^[a-zA-Z0-9\s.,-]+$/,
-          /^[^<]+$/,
-          //'Address can only contain letters, numbers, spaces, and common punctuation.'
-          'Please provide correct input for address'
-        )
-        .required("This field is required"),
-      apartment: Yup
-        .string()
-        .nullable()
-        .optional()
-        .matches(
-          ///^[a-zA-Z0-9\s.,-]+$/,
-          /^[^<]+$/,
-          'Please provide correct input for apartment'
-        ),
-      pincode: Yup.string()
-        .required("This filed is required")
-        .min(6, "Enter valid PIN")
-        .max(6, "Must be exactly 6 digits")
-        .matches(
-          /(?=.*?\d)^\$?(([1-9]\d{0,2}(,\d{3})*)|\d+)?(\.\d{1,2})?$/,
-          "Pincode can only contain numbers"
-        ),
-      city: Yup.string()
-        .matches(/^[a-zA-Z\s]*$/, 'City name can only contain letters')
-        //.matches(/^\S(.*\S)?$/, 'City cannot have leading or trailing spaces')
-        .required("This field is required"),
-      state: Yup.string()
-        .matches(/^[a-zA-Z\s]*$/, 'State name can only contain letters')
-        //.matches(/^\S(.*\S)?$/, 'State cannot have leading or trailing spaces')
-        .required("This field is required"),
-      mobile: Yup.string()
-        .required("This field is required")
-        .min(10, "Phone number should be 10 digits without country code")
-        .max(12, "Phone number should be 12 digits with country code")
-        .matches(
-          /(?=.*?\d)^\$?(([1-9]\d{0,2}(,\d{3})*)|\d+)?(\.\d{1,2})?$/,
-          "This field will only accept numbers"
-        ),
-    }),
 
-    onSubmit: async (values) => {
-      setLoader(true);
-      try {
-        let body = {};
-        //if user has chosen add-address then,
-        if (addAddres) {
-          body = {
-            patientId: atob(getCookie("patientId")),
-            country: values.country,
-            fullName: values.fullName,
-            company: values.company,
-            line: values.address.split(","),
-            apartment: values.apartment,
-            pincode: values.pincode.toString(),
-            city: values.city.trim(),
-            state: values.state.trim(),
-            mobile: values.mobile,
-          };
-        } else {
-          //if user has chosen edit-address then, 
-          //console.log(values, "values")
-          body = {
-            id: data.id,
-            patientId: data.patientId,
-            country: values.country,
-            fullName: values.fullName,
-            company: values.company,
-            line: values.address.split(","),
-            apartment: values.apartment,
-            pincode: values.pincode.toString(),
-            city: values.city,
-            state: values.state,
-            mobile: values.mobile,
-          };
-        }
+  const handleClickSortingMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
 
-        const res = addAddres
-          ? await addAddressAPI(body)
-          : await editAddressAPI(body);
-        if (
-          res?.message === "successully changed" ||
-          res?.message === "success"
-        ) {
-          setLoader(false);
-          setOpen(true)
-        }
-      } catch (error) {
-        console.log(error);
-        setLoader(false);
+  // Function to handle changes in lead status.
+  const handleLeadStatusChange = (event: SelectChangeEvent) => {
+    let val = event.target.value;
+    updateFilter("leadStatus", val)
+    setLeadStatus(val);
+  };
+
+  // Default filter configuration.
+  const defaultFilter = { searchString: "", date: "", leadStatus: "ALL", refillStatus: "ALL", dept: "ALL", unit: 'ALL' };
+  const [filters, setFilters] = useState<any>(defaultFilter);
+
+
+
+  // Function to fetch refill status counts.
+  const getRefillStatus = async () => {
+    try {
+      const response = await getRefillStatusCount();
+      if (response.status === 403) {
+        // deleteCookie("userid");
+        // deleteCookie("refreshToken");
+        // deleteCookie("accessToken");
+        // router.push("/login");
+      } else {
+        callerAgentTabs.map((ca: any) => {
+          switch (ca.key) {
+            case 'REFILL_REMINDERS':
+              ca.value = response?.totalRefillCount;
+              break;
+            case 'REJECTED':
+              ca.value = response?.rejectedCount;
+              break;
+            case 'NO_RESPONSE':
+              ca.value = response?.noResponseCount;
+              break;
+            // case 'PATIENTS_REPORT':
+            //    ca.value = response?.noResponseCount;
+            //   break;
+          }
+        })
+        setTabs(callerAgentTabs)
       }
-    },
-  });
+    } catch (error) {
+      console.error(error)
+      console.log(error)
+      handleApiError(error);
+    }
 
-  const handleOkClick = () => {
+  }
+
+
+  // Function to fetch conversion pending counts.
+  const getConversionPendingDataCount = async () => {
+    try {
+      const res = await getConversionPendingCount()
+      // if (res.status === 403) {
+      //   deleteCookie("userid");
+      //   deleteCookie("refreshToken");
+      //   deleteCookie("accessToken");
+      //   router.push("/login");
+      // } else {
+      setConversionTabCount(res[0].count)
+    } catch (err) {
+      console.log(err)
+      handleApiError(err);
+    }
+  }
+
+  //Function to get High order value count
+  const getHighValueOrderCountData = async () => {
+    try {
+      const res = await getHighValueOrderCount()
+      // if (res.status === 403) {
+      //   deleteCookie("userid");
+      //   deleteCookie("refreshToken");
+      //   deleteCookie("accessToken");
+      //   router.push("/login");
+      // } else {
+      setHighOrderValueCountData(res.data.totalCount.count)
+    } catch (err) {
+      console.log(err)
+      handleApiError(err);
+    }
+  }
+
+  //Function to get GENERAL LEADS order value count
+  const getGeneralLeadsOrderCountData = async () => {
+    try {
+      const res = await getGeneralLeadsOrderCount()
+      // if (res.status === 403) {
+      //   deleteCookie("userid");
+      //   deleteCookie("refreshToken");
+      //   deleteCookie("accessToken");
+      //   router.push("/login");
+      // } else {
+      setGeneralLeadsValueTabCount(res?.data?.totalCount?.count)
+    } catch (err) {
+      console.log(err)
+      handleApiError(err);
+    }
+  }
+
+
+
+
+  // Function to filter select data based on the search string and date.
+  const filterSelect = (data: any[]) => {
+    if (dayjs(modifiedDate, "DD/MM/YYYY", true).isValid()) {
+      if (leadStatus === "All") {
+        return data.filter(
+          (item) =>
+            item.OrderApprovedDate.toLowerCase().includes(modifiedDate) &&
+            (item.LeadStatus.includes("Open") ||
+              item.LeadStatus.includes("Closed"))
+        );
+      }
+      if (leadStatus !== "All") {
+        return data.filter((item: any) => {
+          return (
+            item.OrderApprovedDate.toLowerCase().includes(modifiedDate) &&
+            item.LeadStatus.includes(leadStatus)
+          );
+        });
+      }
+    }
+    if (leadStatus !== "All") {
+      return data.filter((item: any) => {
+        return (
+          item.LeadStatus.includes(leadStatus)
+        );
+      });
+    }
+
+    return data;
+
+  };
+
+  //  Function to handle tab changes.
+  const handleChange = (e: React.SyntheticEvent, newVal: number) => {
+    let temp = tabs.filter((a: any) => a.key == newVal)[0];
+    setSelectedTabMenu(newVal)
+    updateFilter("refillStatus", temp?.option);
+
+  };
+
+
+  // Function to handle tab menu clicks.
+  const onTabMenuClick = (id: any) => {
+    if (id == "REFILL_REMINDERS") {
+      setExpandMenu(!expandMenu);
+    }
+    let temp = tabs.filter((a: any) => a.key == id)[0];
+    setSelectedTabMenu(id);
+    updateFilter("refillStatus", temp.option);
+
+    //below is for reseting all filters on tab change
+    (id !== 'REJECTED' && id !== 'NO_RESPONSE') && setFilters(defaultFilter)
+    setQuery('')
+    setUnit('ALL')
+    setLeadStatus('ALL')
+    setModifiedDate('')
+    setOrderDirection('')
+    setDateValue(null)
+
+  }
+
+  // Function to handle date changes.
+  const handleDateChange = (newValue: any) => {
+    setDateValue(newValue?.$d);
+    let modDate = dayjs(newValue?.$d).format("DD/MM/YYYY")
+    updateFilter('date', modDate)
+    setModifiedDate(dayjs(newValue?.$d).format("MM/DD/YYYY"));
+  };
+
+  // Function to clear the date filter.
+  const handleClear = () => {
+    setModifiedDate('')
+    updateFilter('date', "")
+    setDateValue(null)
+  };
+
+  // Function to handle opening the modal for capturing responses.
+  const handleOpen = (value: any) => {
+    setOpen(true);
+    setRowData(value)
+  }
+
+  // Function to handle opening the modal for closing the lead.
+  const handleOpenLead = (value: any) => {
+    setOpenLead(true)
+    setRowDataLead(value)
+  }
+
+  // Function to handle the change in response capture status.
+  const handleCaptureChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setValueCapture((event.target as HTMLInputElement).value);
+
+  };
+
+  // Function to handle the change in follow-up status.
+  const handleFollowupsChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setValueFollowups((event.target as HTMLInputElement).value);
+  };
+
+  // Function to handle the submission of response capture.
+  // const handleSubmitCapture = async (selectedReason, valueFollowups, followUpDate, valueTime, selectedCD, selectedL1, selectedL2, additionalComment) => {
+  //   //event.preventDefault();
+
+  //   //setOpen(false)
+
+  //   // let body = {
+  //   //   orderId: rowData?.orderId,
+  //   //   answerCall: true,
+  //   //   requireMore: rowData?.followUps > 1 ? valueFollowups === "require more follow ups" : false,
+  //   //   response: selectedReason
+  //   // }
+
+  //   // if (valueFollowups === "close the lead") {
+  //   //   setOpenLead(true)
+  //   //   setRowDataLead({ ...body, requireMore: false })
+  //   // }
+
+  //   // else if (valueFollowups === "require more follow ups") {
+  //   //   await captureResponsePaymentPending(body)
+  //   // }
+
+  //   // if (rowData?.followUps === 1) {
+  //   //   setRowData({ ...rowData, leadStatus: "CLOSED" })
+  //   // }
+  //   // setResponseText('')
+  //   // setRender(!render)
+  //   await captureResponsePaymentPending({
+  //     orderId: rowData?.orderId,
+  //     answerCall: true,
+  //     requireMore: rowData?.followUps > 1 ? valueFollowups === "Yes" : false,
+  //     //response: selectedReason,
+  //     followUpDate: followUpDate,
+  //     "callDisposition": selectedCD,
+  //     "serviceDispositionL1": selectedL1,
+  //     "serviceDispositionL2": selectedL2,
+  //     "timings": valueTime?.format('hh:mm A'),
+  //     "response": additionalComment
+
+
+  //   }).then((res) => {
+  //     if (res?.message === 'success')
+  //       getPaymentPendingUsersData(pageNumberClicked, recordsToShow, query, leadStatus, modifiedDate, unit)
+  //   })
+
+  // }
+
+  const handleSubmitCapture = async (
+  selectedReason: any,
+  valueFollowups: any,
+  followUpDate: any,
+  valueTime: any,
+  selectedCD: any,
+  selectedL1: any,
+  selectedL2: any,
+  additionalComment: string,
+  dnd: boolean,
+  phoneNumber: string
+) => {
+  try {
+    const res = await captureResponsePaymentPending({
+      orderId: rowData?.orderId,
+      answerCall: true,
+      requireMore: rowData?.followUps > 1 ? valueFollowups === "Yes" : false,
+      response: selectedReason,
+      followUpDate,
+      callDisposition: selectedCD,
+      serviceDispositionL1: selectedL1,
+      serviceDispositionL2: selectedL2,
+      timings: valueTime?.format("hh:mm A"),
+      comments: additionalComment,
+      dnd,
+      phoneNumber,
+    });
+
+    if (res?.statusCode === 201 || res?.message === "success") {
+      getPaymentPendingUsersData(
+        pageNumberClicked,
+        recordsToShow,
+        query,
+        leadStatus,
+        modifiedDate,
+        unit
+      );
+    }
+  } catch (error) {
+    handleApiError(error);
+  }
+};
+
+
+  // Function to handle the click on cancel.
+  const handleCancelClick = () => {
+    setResponseText('')
     setOpen(false)
-    router.back()
-  }
-  //The incoming data prop is set as event state
-  React.useEffect(() => {
-    setEvent(data);
-  }, [data]);
-
-
-  const handleAddressChangeData = ({ postalCode, city, state, address }) => {
-    validation.setFieldValue("address", address)
-    validation.setFieldValue("pincode", postalCode)
-    validation.setFieldValue("city", city)
-    validation.setFieldValue("state", state)
-    // setPostalData(postalCode)
-    // setCityData(city)
-    // setStateData(state)
-    // setAddressData(address)
   }
 
-  const handleBlur = (noOption, address) => {
-    validation.setFieldValue("address", address)
+  // Function to handle closing the lead.
+  const handleCloseLead = async (data: any) => {
+    console.log("Close:",rowData?.patientId)
+    let res;
+    if (valueFollowups === "close the lead") {
+      res = await captureResponsePaymentPending(data)
+      setValueFollowups('')
+    } else {
+      res = await closeLeadPaymentPending(data)
+    }
+    setRowDataLead({ ...res, leadStatus: "CLOSED" })
+    setOpenLead(false)
+    setOpenChildCloseLead(true)
+    setRender(!render)
   }
 
+
+  // Function to update filter options.
+  const updateFilter = (type: any, value: any) => {
+    let updatedFilter = { ...filters, [type]: value };
+    setFilters(updatedFilter);
+
+  }
+
+  //function to sort payment pending data 
+  const handleDirLtoH = () => {
+    setOrderDirection('ASC')
+  }
+  const handleDirHtoL = () => {
+    setOrderDirection('DESC')
+  }
+
+  // Function to get payment pending user data.
+  const getPaymentPendingUsersData = async (page, limit, keyword, leadStatus, approvedDate, unit, orderBy = orderDirection.length === 0 ? '' : 'orderValue', orderDir = `${orderDirection}`) => {
+    setIsLoading(true)
+    try {
+      const res = await getPaymentPendingUsers(page, limit, keyword, leadStatus, approvedDate, orderBy, orderDir, unit)
+      // if (res.status === 403) {
+      //   deleteCookie("userid");
+      //   deleteCookie("refreshToken");
+      //   deleteCookie("accessToken");
+      //   router.push("/login");
+      // } else {
+      callerAgentTabs.forEach((ca: any) => {
+        switch (ca.key) {
+          case 'PAYMENTS_PENDING':
+            ca.value = res?.meta?.total;
+            break;
+        }
+      });
+      const { results, meta } = res;
+      results?.map((item:any) => item.responseDetails.sort((a: any, b: any) => new Date(a.updated_at) - new Date(b.updated_at)))
+      setPendingUsersData(results)
+      setTotalRecords(res?.meta?.total);
+      setIsLoading(false)
+      setCountRecords(meta?.total)
+    } catch (error) {
+      console.error(`Get Payment pending user ===> ${error}`);
+      setIsLoading(false)
+    }
+
+  }
+
+  //Change Dept filter in high order value
+  const handleDeptChange = (event: any) => {
+    setDept(event.target.value)
+    updateFilter('dept', event.target.value)
+  }
+
+  //open modal for save data
+  const handleSaveData = () => {
+    setOpenSDModal(true)
+  }
+
+  //handle start date and end date for download
+  const handleFromDate = (newValue: any) => {
+    setSaveDataFrom(dayjs(newValue?.$d).format("YYYY-MM-DD"))
+  }
+  const handleToDate = (newValue: any) => {
+    setSaveDataTo(dayjs(newValue?.$d).format("YYYY-MM-DD"))
+  }
+
+  //JSON data fro selected tab
+  const getJsonDataToSave = async () => {
+    const res = await saveCallCenterData({
+      "startDate": saveDataFrom,
+      "endDate": saveDataTo,
+      "name": selectedTabMenu
+    })
+    setJsonDataToSave(res?.data)
+    exportToCSV(res?.data)
+  }
+
+  //function to call on confirm date for saving data
+  const handleConfirmToSaveData = () => {
+    getJsonDataToSave()
+    setOpenSDModal(false)
+    setSaveDataFrom('')
+    setSaveDataTo('')
+  }
+
+  //save data in csv format
+  const exportToCSV = (json: any) => {
+    exportFromJSON({ data: json, fileName: `${selectedTabMenu}_REPORT_${saveDataFrom}_TO_${saveDataTo}`, exportType: 'csv' });
+  };
+
+
+  // useEffect(() => {
+  //   getPaymentPendingUsersData(pageNumberClicked, recordsToShow, query, leadStatus, modifiedDate)
+  // }, [pageNumberClicked, recordsToShow, query, leadStatus, modifiedDate, render, orderDirection])
+
+  // Effect to fetch payment pending data every 5s
+  useEffect(() => {
+
+    // Function to fetch high value order data
+    const fetchData = () => {
+      getPaymentPendingUsersData(pageNumberClicked, recordsToShow, query, leadStatus, modifiedDate, unit)
+    };
+
+    // Fetch data on component mount and whenever dependencies change
+    fetchData();
+
+    if (!pdfModalOpen && (selectedTabMenu === 'PAYMENTS_PENDING')) {
+      const intervalId = setInterval(fetchData, 5000);
+      return () => clearInterval(intervalId);
+    }
+  }, [pageNumberClicked, recordsToShow, query, leadStatus, modifiedDate, render, orderDirection, unit, pdfModalOpen, selectedTabMenu === 'PAYMENTS_PENDING']);
+
+  //unlocking order
+  const unlockingOrder = async (row: any) => {
+    const res = await unlockCallCenterOrder({
+      "patientId": row?.patientId,
+      "prescriptionId": row?.orderId,//api has prescription id replaced with order id
+      "name": "PAYMENTS_PENDING",
+    })
+  }
+
+  //submit for dnd
+  const handleDND = async (row: any) => {
+    const res = await enableDND({
+      "phoneNumber": row?.phoneNumber,
+      "patientId": row?.patientId,
+      "dnd": true
+    })
+  }
+
+  //closing capture response modal
+  const closingCaptureResponseModal = (row: any) => {
+    setOpen(false)
+    unlockingOrder(row)
+  }
+
+  //closing close lead modal
+  const closingCloseLeadModal = () => {
+    setOpenLead(false)
+    unlockingOrder(rowData)
+  }
+
+  //getting Units Data
+  const getUnitsData = async () => {
+    try {
+      const resUnits = await getUnitList();
+      // if (resUnits.status === 403) {
+      //   deleteCookie("userid");
+      //   deleteCookie("refreshToken");
+      //   deleteCookie("accessToken");
+      //   router.push("/login");
+      // } else {
+      setUnitData(resUnits?.data);
+    } catch (err) {
+      console.log(`Get Units ===> ${err}`);
+    }
+  };
+
+  //function called on unit change
+  const handleChangeUnit = (event: any) => {
+    setUnit(event.target.value)
+    updateFilter("unit", event.target.value)
+  }
+
+  useEffect(() => {
+    getRefillStatus();
+    getConversionPendingDataCount()
+    getHighValueOrderCountData()
+    getGeneralLeadsOrderCountData()
+    getUnitsData()
+  }, []);
+
+  //check for call center admin
+  useEffect(() => {
+    const token: any = getCookie("accessToken");
+    const temp = decryptToken(token);
+    const decoded: any = jwtDecode(temp);
+    const { roles } = decoded;
+    if (roles?.includes("call_center_admin")) {
+      setIsCallCenterAdmin(true)
+    }
+  }, []);
 
   return (
-    <Grid container>
-      {loader ? (
+    <Box
+      sx={{
+        bgcolor: theme.palette.primary.light,
+        display: "flex",
+        height: "100%",
+        flexDirection: "row",
+      }}>
+      <Box
+        sx={{
+          width: "13rem",
+          borderRight: `1px solid ${theme.palette.grey[600]}`,
+          display: "flex",
+          flexFlow: "column nowrap",
+        }}>
         <Box
           sx={{
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            height: "100vh",
-            width: "100%",
-          }}
-        >
-          <CircularProgress />
+            padding: "1rem 1.5rem",
+          }}>
+          <Box
+            sx={{
+              position: "relative",
+              width: "11rem",
+              height: "2.5rem",
+            }}>
+            <Image
+              src="images/manipal-hospitals-logo.svg"
+              fill
+              //style={{ objectFit: "cover" }}
+              object-fit='contain'
+              alt="notif"
+            />
+          </Box>
         </Box>
-      ) : (
-        <>
-          <Grid item xs={12} sm={12} md={12} lg={12} xl={12}>
-            <Box sx={{ pt: 1, pl: 1, pr: 1 }}>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  validation.handleSubmit();
-                  return false;
+        <Tabs
+          orientation="vertical"
+          variant="scrollable"
+          value={selectedTabMenu}
+          onChange={handleChange}
+          aria-label="Order Filters"
+          sx={{
+            borderRight: 0,
+            borderTop: 1,
+            borderBottom: 1,
+            borderColor: "divider",
+            alignItems: "start",
+            height: "100vh",
+            "& .MuiButtonBase-root": { opacity: "1" },
+          }}
+          TabIndicatorProps={{
+            style: { backgroundColor: theme.palette.primary.main },
+          }}>
+          {/* {tabs?.map((tab: any) => <StyledTab label={<CustomLabel label={tab.key} value={tab.value} />} value={tab.key} />)} */} {/*Prev way to show vertical menus*/}
+          <Tooltip title="Leads that have received the payment link but have not made the purchase" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["PAYMENTS_PENDING"].includes(selectedTabMenu)} label={<CustomLabel label={"PAYMENTS_PENDING"} value={tabs[0].value} />} value={"PAYMENTS_PENDING"} onClick={(e) => onTabMenuClick("PAYMENTS_PENDING")} />
+            </Box>
+          </Tooltip>
+          <ExpandableMenu />
+
+          <Tooltip title="Leads that have authenticated but have not taken any action" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["CONVERSION_PENDING"].includes(selectedTabMenu)} label={<CustomLabel label={"CONVERSION_PENDING"} value={conversionTabCount} />} value={"CONVERSION_PENDING"} onClick={(e) => onTabMenuClick("CONVERSION_PENDING")} />
+            </Box>
+          </Tooltip>
+
+          <Tooltip title="Leads which fall under high-value Specialties" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["HIGH_VALUE_ORDER"].includes(selectedTabMenu)} label={<CustomLabel label={"HIGH_VALUE_ORDER"} value={highOrderValueTabCount} />} value={"HIGH_VALUE_ORDER"} onClick={(e) => onTabMenuClick("HIGH_VALUE_ORDER")} />
+            </Box>
+          </Tooltip>
+
+          <Tooltip title="Leads which fall under general Specialties" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["GENERAL_LEADS"].includes(selectedTabMenu)} label={<CustomLabel label={"GENERAL_LEADS"} value={generalLeadsOrderValueTabCount} />} value={"GENERAL_LEADS"} onClick={(e) => onTabMenuClick("GENERAL_LEADS")} />
+            </Box>
+          </Tooltip>
+
+          {isCallCenterAdmin && <Tooltip title="Reports" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["REPORTS"].includes(selectedTabMenu)} label={<CustomLabel label={"REPORTS"} value={''} />} value={"REPORTS"} onClick={(e) => onTabMenuClick("REPORTS")} />
+            </Box>
+          </Tooltip>}
+        </Tabs>
+      </Box>
+      <PageContainer>
+        {
+          (selectedTabMenu === 'REPORTS' && isCallCenterAdmin) ? <Box>
+            <Reports isCallCenterAdmin={isCallCenterAdmin} />
+          </Box>
+            :
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "flex-start",
+                flexDirection: "column",
+                padding: "1rem 1.5rem",
+              }}
+            >
+              <Box
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
                 }}
               >
-
-                <DetectCurrentLocation onLocationDetected={handleAddressChangeData} />
-
-                <FormControl fullWidth>
-                  {/* <InputLabel id="demo-simple-select-label">
-                    Country/Region<span style={{ color: "red" }}>*</span>
-                  </InputLabel> */}
-                  <TextField
-                    name=""
-                    label={
-                      <span>
-                        <span>Country/Region</span>
-                        <span style={{ color: "red" }}>*</span>
-                      </span>
-                    }
-                    variant="outlined"
-                    fullWidth
-                    value={"India"}
-                    style={{ marginBottom: "1rem" }}
-                    InputProps={{ readOnly: true, }}
-                  />
-                  {/* <Select
-                    name="country"
-                    labelId="demo-simple-select-label"
-                    id="demo-simple-select"
-                    value={validation.values.country || ""}
-                    label="Country/Region*"
-                    onChange={validation.handleChange}
-                    sx={{ mb: 2 }}
-                    MenuProps={{
-                      PaperProps: {
-                        style: {
-                          transform: "translate3d(0rem, 2rem, 0rem)", // Adjust the translation as needed
-                        },
-                      },
-                    }}
-                  >
-                    {countries.map((item) => (
-                      <MenuItem key={item.code} value={item.name}>
-                        {item.name}
-                      </MenuItem>
-                    ))}
-                  </Select> */}
-                </FormControl>
-                <FormControl fullWidth>
-                  <TextField
-                    name="fullName"
-                    label={
-                      <span>
-                        <span>Full Name</span>
-                        <span style={{ color: "red" }}>*</span>
-                      </span>
-                    }
-                    variant="outlined"
-                    fullWidth
-                    value={validation.values.fullName || ""}
-                    onChange={validation.handleChange}
-                    style={{ marginBottom: "1rem" }}
-                    error={
-                      Boolean(validation.errors.fullName) &&
-                      Boolean(validation.touched.fullName)
-                    }
-                    helperText={
-                      Boolean(validation.touched.fullName) &&
-                      validation.errors.fullName
-                    }
-                  />
-                </FormControl>
                 <TextField
-                  name="company"
-                  label="Company (optional)"
                   variant="outlined"
-                  fullWidth
-                  value={validation.values.company || ""}
-                  onChange={validation.handleChange}
-                  style={{ marginBottom: "1rem" }}
-                  error={
-                    Boolean(validation.errors.company) &&
-                    Boolean(validation.touched.company)
-                  }
-                  helperText={
-                    Boolean(validation.touched.company) &&
-                    validation.errors.company
-                  }
+                  sx={{ width: "15.5rem", marginRight: "0.688rem", }}
+                  key="search-bar"
+                  value={query}
+                  placeholder="Search by patient name/patient id"
+                  onChange={(e: any) => {
+                    let value = e.target.value
+                    const allowedValue = value.replace(/[^\w\s]/gi, '');
+                    updateFilter('searchString', value)
+                    //setQuery(value)
+                    setQuery(allowedValue)
+                  }}
+                  size="small"
                 />
 
+                {isCallCenterAdmin &&
+                  <Button variant="contained" onClick={handleSaveData} sx={{ textTransform: "none", borderRadius: "0" }}>Download CSV/Excel</Button>
+                }
+
+                <Box
+                  style={{ display: "flex", flexDirection: "row", gap: "10px", margin: "1rem 0rem  1rem 0rem", }}
+                >
+                  {selectedTabMenu === "HIGH_VALUE_ORDER" &&
+                    <FormControl size="small">
+                      <InputLabel id="demo-simple-select-label">Dept</InputLabel>
+                      <Select
+                        value={dept}
+                        label="Select Dept"
+                        onChange={handleDeptChange}
+                        style={{ width: "5rem", }}
+                        MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                      >
+                        <MenuItem value={"ALL"}>All</MenuItem>
+                        <MenuItem value={"ONCOLOGY"}>ONCOLOGY</MenuItem>
+                        <MenuItem value={"CARDIOLOGY"}>CARDIOLOGY</MenuItem>
+                        <MenuItem value={"UROLOGY"}>UROLOGY</MenuItem>
+                        <MenuItem value={"INTERNAL MEDICINE"}>INTERNAL MEDICINE</MenuItem>
+                        <MenuItem value={"ORTHOPEDICS"}>ORTHOPEDICS</MenuItem>
+                        <MenuItem value={"DIABETES AND ENDOCRINOLOGY"}>DIABETES AND ENDOCRINOLOGY</MenuItem>
+                        <MenuItem value={"NEPHROLOGY"}>NEPHROLOGY</MenuItem>
+                        <MenuItem value={"NEUROLOGY"}>NEUROLOGY</MenuItem>
+                        <MenuItem value={"PULMONOLOGY & RESPIRATORY"}>PULMONOLOGY & RESPIRATORY</MenuItem>
+                        <MenuItem value={"RHEUMATOLOGY"}>RHEUMATOLOGY</MenuItem>
+                        <MenuItem value={"OBS & GYNAEC"}>OBS & GYNAEC</MenuItem>
+                        <MenuItem value={"DERMATOLOGY"}>DERMATOLOGY</MenuItem>
+                        <MenuItem value={"RHEUMATOLOGY- JOINT PAIN"}>RHEUMATOLOGY- JOINT PAIN</MenuItem>
+                        <MenuItem value={"ENDOCRINOLOGY"}>ENDOCRINOLOGY</MenuItem>
+                        <MenuItem value={"OBG (GYNAECOLOGY)"}>OBG (GYNAECOLOGY)</MenuItem>
+                        <MenuItem value={"PULMONOLOGY"}>PULMONOLOGY</MenuItem>
+                        <MenuItem value={"GASTROENTEROLOGY"}>GASTROENTEROLOGY</MenuItem>
 
 
-                <AutocompleteAddress onAddressChangeData={handleAddressChangeData}
-                  // data={!addAddres ? data?.line?.join(', ') : ""}
-                  isEdit={!addAddres}
-                  value={validation.values.address || ""}
-                  onChange={validation.handleChange}
-                  error={
-                    Boolean(validation.errors.address) &&
-                    Boolean(validation.touched.address)
-                  }
-                  helperText={
-                    Boolean(validation.touched.address) &&
-                    validation.errors.address
-                  }
-                  onBlurParent={handleBlur}
-                />
 
-                {/* <TextField
-                  name="address"
-                  label={
-                    <span>
-                      <span>Address</span>
-                      <span style={{ color: "red" }}>*</span>
-                    </span>
-                  }
-                  variant="outlined"
-                  fullWidth
-                  value={validation.values.address || ""}
-                  style={{ marginBottom: "1rem" }}
-                  onChange={validation.handleChange}
-                  error={
-                    Boolean(validation.errors.address) &&
-                    Boolean(validation.touched.address)
-                  }
-                  helperText={
-                    Boolean(validation.touched.address) &&
-                    validation.errors.address
-                  }
-                /> */}
+                      </Select>
+                    </FormControl>}
 
-                <TextField
-                  name="apartment"
-                  label="Apartment,suite,etc(optional)"
-                  variant="outlined"
-                  onChange={validation.handleChange}
-                  fullWidth
-                  value={validation.values.apartment || ""}
-                  style={{ marginBottom: "1rem" }}
-                  error={
-                    Boolean(validation.errors.apartment) &&
-                    Boolean(validation.touched.apartment)
-                  }
-                  helperText={
-                    Boolean(validation.touched.apartment) &&
-                    validation.errors.apartment
-                  }
-                />
-
-                <TextField
-                  name="pincode"
-                  type="number"
-                  inputProps={{ maxLength: 6 }}
-                  label={
-                    <span>
-                      <span>Pincode</span>
-                      <span style={{ color: "red" }}>*</span>
-                    </span>
-                  }
-                  variant="outlined"
-                  fullWidth
-                  value={validation.values.pincode || ""}
-                  onChange={validation.handleChange}
-                  style={{ marginBottom: "1rem" }}
-                  error={
-                    Boolean(validation.errors.pincode) &&
-                    Boolean(validation.touched.pincode)
-                  }
-                  helperText={
-                    Boolean(validation.touched.pincode) &&
-                    Boolean(validation.errors.pincode) &&
-                    validation.errors.pincode
-                  }
-                />
-
-                <TextField
-                  name="city"
-                  label={
-                    <span>
-                      <span>City</span>
-                      <span style={{ color: "red" }}>*</span>
-                    </span>
-                  }
-                  variant="outlined"
-                  fullWidth
-                  value={validation.values.city || ""}
-                  onChange={validation.handleChange}
-                  style={{ marginBottom: "1rem" }}
-                  error={
-                    Boolean(validation.errors.city) &&
-                    Boolean(validation.touched.city)
-                  }
-                  helperText={
-                    Boolean(validation.touched.city) &&
-                    Boolean(validation.errors.city) &&
-                    validation.errors.city
-                  }
-                />
-
-                <TextField
-                  name="state"
-                  label={
-                    <span>
-                      <span>State</span>
-                      <span style={{ color: "red" }}>*</span>
-                    </span>
-                  }
-                  variant="outlined"
-                  fullWidth
-                  value={validation.values.state || ""}
-                  onChange={validation.handleChange}
-                  style={{ marginBottom: "1rem" }}
-                  error={
-                    Boolean(validation.errors.state) &&
-                    Boolean(validation.touched.state)
-                  }
-                  helperText={
-                    Boolean(validation.touched.state) &&
-                    Boolean(validation.errors.state) &&
-                    validation.errors.state
-                  }
-                />
-
-                <TextField
-                  name="mobile"
-                  label={
-                    <span>
-                      <span>Mobile Number</span>
-                      <span style={{ color: "red" }}>*</span>
-                    </span>
-                  }
-                  variant="outlined"
-                  fullWidth
-                  value={validation.values.mobile || ""}
-                  onChange={validation.handleChange}
-                  style={{ marginBottom: "1rem" }}
-                  error={
-                    Boolean(validation.errors.mobile) &&
-                    Boolean(validation.touched.mobile)
-                  }
-                  helperText={
-                    Boolean(validation.touched.mobile) &&
-                    Boolean(validation.errors.mobile) &&
-                    validation.errors.mobile
-                  }
-                />
-              </form>
-            </Box>
-          </Grid>
-          <Grid item xs={12} sm={12} md={12} lg={12} xl={12}>
-            <Divider />
-            <Divider />
-            <Box sx={{ float: "right", p: 1 }}>
-              <Button
-                variant="text"
-                sx={{ mr: 1 }}
-                onClick={() => router.back()}
-              >
-                CANCEL
-              </Button>
-              <Button
-                variant="contained"
-                type="submit"
-                onClick={validation.submitForm}
-              //onClick={handleSaveChanges}
-              >
-                SAVE CHANGES
-              </Button>
-            </Box>
-
-            <Modal
-              open={open}
-              onClose={() => setOpen(false)}
-              aria-labelledby="modal-modal-title"
-              aria-describedby="modal-modal-description"
-              sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}
-            >
-              <Box sx={{
-                backgroundColor: theme.palette.primary.light,
-                borderRadius: "0.25rem",
-                display: "flex",
-                flexDirection: "column",
-                rowGap: "1rem",
-                justifyContent: "space-evenly",
-                alignItems: "center",
-                width: "80%",
-                height: "30%",
-                padding: "1rem"
-
-              }}>
-                <Image src={tick}
-                  style={{ objectFit: "cover" }}
-                  alt="tick mark"
-                />
-
-                <Box sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "space-around",
-                  alignItems: "center",
-                }}>
-                  <Typography id="modal-modal-title" variant="h6" component="h2"
-                    sx={{ fontWeight: 400 }}>
-                    Your changes in address details have been saved successully.
-                  </Typography>
-                  <Box sx={{
-                    width: "98%",
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    marginTop: "2.625rem",
-                  }}>
-                    <Typography
-                      onClick={handleOkClick}
-                      sx={{
-                        color: theme.palette.primary.main,
-                        cursor: "pointer",
-                        ":hover": {
-                          transform: "scale(1.1)",
+                  {/* UNIT BASED FILTER */}
+                  <FormControl size="small">
+                    <InputLabel id="demo-simple-select-label">Unit</InputLabel>
+                    <Select
+                      value={unit}
+                      label="Unit"
+                      onChange={handleChangeUnit}
+                      style={{ width: "5.5rem", }}
+                      renderValue={(selected) => {
+                        if (!selected || selected === "ALL") return "All";
+                        const selectedUnit = unitData.find((item: any) => item.value === selected);
+                        return selectedUnit ? selectedUnit.key : selected;
+                      }}
+                      MenuProps={{
+                        PaperProps: {
+                          sx: {
+                            maxHeight: 300,
+                            overflowY: "auto",
+                            '&::-webkit-scrollbar': {
+                              width: '8px',
+                            },
+                            '&::-webkit-scrollbar-track': {
+                              backgroundColor: '#f1f1f1',
+                              borderRadius: '10px',
+                            },
+                            '&::-webkit-scrollbar-thumb': {
+                              backgroundColor: '#90caf9',
+                              borderRadius: '10px',
+                            },
+                            '&::-webkit-scrollbar-thumb:hover': {
+                              backgroundColor: '#42a5f5',
+                            },
+                          },
                         },
                       }}
                     >
-                      OK
-                    </Typography>
+                      <MenuItem value={"ALL"}>All</MenuItem>
+                      {unitData.length > 0 &&
+                        unitData?.map(
+                          (item: any) => (
+                            <MenuItem
+                              // sx={{ textTransform: "capitalize" }}
+                              value={item?.key}
+                              key={item?.id}
+                            >
+                              {item?.value}
+                            </MenuItem>
+                          )
+
+                        )}
+
+                    </Select>
+                  </FormControl>
+
+                  <FormControl size="small">
+                    <InputLabel id="demo-simple-select-label">Lead Status</InputLabel>
+                    <Select
+                      value={leadStatus}
+                      label="Lead Status"
+                      onChange={handleLeadStatusChange}
+                      style={{ width: "8rem", }}
+                    >
+                      <MenuItem value={"ALL"}>All</MenuItem>
+                      <MenuItem value={"OPEN"}>Open</MenuItem>
+                      <MenuItem value={"CLOSED"}>Closed</MenuItem>
+                      <MenuItem value={"CONVERTED"}>Converted</MenuItem>
+                      {selectedTabMenu !== "CONVERSION_PENDING" && <MenuItem value={"FOLLOW UP"}>Follow Up</MenuItem>}
+                    </Select>
+                  </FormControl>
+                  <Box
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 170
+                    }}>
+                    <LocalizationProvider dateAdapter={AdapterDayjs}>
+                      <DatePicker
+                        label="Select Date"
+                        defaultValue={null}
+                        value={dateValue}
+                        disableHighlightToday
+                        format="DD/MM/YYYY"
+                        onChange={(newValue) => handleDateChange(newValue)}
+                        slotProps={{
+                          actionBar: { actions: ['clear', 'cancel'], onClear: handleClear },
+                          textField: { size: 'small' }
+                        }}
+                      />
+
+                    </LocalizationProvider>
                   </Box>
+
+                  {selectedTabMenu === 'PAYMENTS_PENDING' && <Box>
+                    <Button
+                      onClick={handleClickSortingMenu}
+                      variant="contained"
+                      endIcon={<i className="ri-arrow-up-down-fill"></i>}
+                      size="small"
+                      sx={{ borderRadius: '0' }}
+                    >
+                      Sort
+                    </Button>
+                    <Menu
+                      id="basic-menu"
+                      anchorEl={anchorEl}
+                      open={openSortingMenu}
+                      onClose={() => setAnchorEl(null)}
+                      MenuListProps={{
+                        'aria-labelledby': 'basic-button',
+                      }}
+                    >
+                      <MenuItem onClick={() => setOrderDirection('')}>Default Order Value</MenuItem>
+                      <MenuItem onClick={handleDirLtoH}>Order Value: Low to High</MenuItem>
+                      <MenuItem onClick={handleDirHtoL}>Order Value: High to Low</MenuItem>
+                    </Menu>
+                  </Box>}
+
+                </Box>
+              </Box>
+
+              {selectedTabMenu == 'PAYMENTS_PENDING' && <Typography sx={{ color: '#034EA1' }}>Count:{countRecords}</Typography>}
+
+              <Box>
+                {selectedTabMenu == 'PAYMENTS_PENDING' &&
+                  <CallerAgentList
+                    tableData={pendingUsersData}
+                    isLoading={isLoading}
+                    pageNumberClicked={pageNumberClicked}
+                    setPageNumberClicked={setPageNumberClicked}
+                    recordsToShow={recordsToShow}
+                    setRecordsToShow={setRecordsToShow}
+                    totalRecords={totalRecords}
+                    setTotalRecords={setTotalRecords}
+                    handleCapture={handleOpen}
+                    handleCloseLead={handleOpenLead}
+                    tab={selectedTabMenu}
+                    handleViewPdf={(e: any) => setPdfModalOpen(e)}
+                  />
+                }
+                {['REFILL_REMINDERS', 'REJECTED', 'NO_RESPONSE'].includes(selectedTabMenu) &&
+                  <CallerAgentRefillReminder filters={filters} tab={'REFILL_REMINDERS'} leadStatusRefillRem={leadStatus} />}
+
+                {['CONVERSION_PENDING'].includes(selectedTabMenu) &&
+                  <ConversionPending filters={filters} tab={selectedTabMenu} />}
+
+                {['HIGH_VALUE_ORDER'].includes(selectedTabMenu) &&
+                  <HighValueOrder filters={filters} tab={selectedTabMenu} />}
+
+                {['GENERAL_LEADS'].includes(selectedTabMenu) &&
+                  <GeneralLeadsOrder filters={filters} tab={selectedTabMenu} />}
+
+
+                {/* <Box>
+              <Modal
+                open={open}
+                onClose={() => setOpen(false)}
+              >
+                <Box sx={style}>
+                  <form onSubmit={handleSubmitCapture}>
+                    <Box sx={{ display: "flex", flexDirection: "column" }}>
+                      <Typography id="modal-modal-title" variant="h6" component="h2">
+                        Capture Customer's Response
+                      </Typography>
+
+                      <Box sx={{ marginTop: "20px" }}>
+                        <Typography >Did the customer answer the call?</Typography>
+                        <RadioGroup
+                          row
+                          aria-labelledby="demo-row-radio-buttons-group-label"
+                          name="row-radio-buttons-group"
+                          value={valueCapture}
+                          onChange={handleCaptureChange}
+                        >
+                          <FormControlLabel value={"yes"} control={<Radio />} label="Yes" />
+                          <FormControlLabel value={"no"} control={<Radio />} label="No" />
+
+                        </RadioGroup>
+                      </Box>
+
+                      {valueCapture === "yes" ?
+                        <Box>
+                          <TextField
+                            multiline
+                            rows={4}
+                            placeholder="write customer response here"
+                            sx={{ marginTop: "20px", width: "100%" }}
+                            value={responseText}
+                            onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                              setResponseText(event.target.value.replace(/<\/?[^>]+(>|$)/g, ''));
+                            }}
+
+                          />
+                          {
+                            rowData?.followUps !== 1 ?
+                              <Box sx={{ marginTop: "20px" }}>
+                                <Typography >Does this require more follow ups or would you like to close the lead?</Typography>
+                                <RadioGroup
+                                  row
+                                  aria-labelledby="demo-row-radio-buttons-group-label"
+                                  name="row-radio-buttons-group"
+                                  value={valueFollowups}
+                                  onChange={handleFollowupsChange}
+                                >
+
+                                  <FormControlLabel value={'require more follow ups'} control={<Radio />} label={"Require more follow ups"} />
+                                  <FormControlLabel value={'close the lead'} control={<Radio />} label="Close the Lead" />
+
+                                </RadioGroup>
+                              </Box>
+                              :
+                              <Typography sx={{ marginTop: "20px" }}>
+                                Note: This lead will be closed as there are no more follow ups left for this customer.
+                              </Typography>
+                          }
+                        </Box>
+
+                        :
+
+                        <Typography sx={{ marginTop: "20px" }}>
+                          Note: There are {rowData?.followUps} more follow ups left
+                        </Typography>
+                      }
+
+
+                      <Stack direction="row" sx={{ width: "100%", display: "flex", justifyContent: "flex-end", marginTop: "2.625rem", }}>
+                        <Button onClick={handleCancelClick}>CANCEL</Button>
+                        <Button variant="contained" type="submit" sx={{ borderRadius: "0.25rem" }}>SUBMIT</Button>
+                      </Stack>
+                    </Box>
+                  </form>
+                </Box>
+              </Modal>
+            </Box> */}
+
+                <DispositionFormCA open={open}
+                  //onClose={() => setOpen(false)}
+                  onClose={() => closingCaptureResponseModal(rowData)}
+                  handleSubmitCapture={handleSubmitCapture}
+                  rowData={rowData}
+                  handleDND={() => handleDND(rowData)}
+                />
+
+
+                <Box>
+                  <Modal
+                    open={openLead}
+                    onClose={closingCloseLeadModal}
+                    sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+                  >
+                    <Box sx={{ width: "37.125rem", height: "15.125rem", backgroundColor: theme.palette.primary.light, padding: "25px" }}
+                    >
+                      <Typography id="modal-modal-title" variant="h6" component="h2">
+                        Close the lead
+                      </Typography>
+                      <Typography sx={{ paddingTop: "20px" }}>
+                        Do you confirm to close the lead?
+                      </Typography>
+                      <Box sx={{ display: "flex", position: "relative", top: "40%", left: "60%" }}>
+                        <Button onClick={closingCloseLeadModal}>CANCEL</Button>
+                        <Button
+                          onClick={() => handleCloseLead(rowDataLead)}
+                          variant="contained"
+                          style={{ borderRadius: "0px", margin: "10px" }}
+                        >
+                          YES, I CONFIRM
+                        </Button>
+                      </Box>
+
+                    </Box>
+
+                  </Modal>
                 </Box>
 
-              </Box>
-            </Modal>
+                <React.Fragment>
+                  <Modal
+                    open={openChildCloseLead}
+                    onClose={() => setOpenChildCloseLead(false)}
+                    aria-labelledby="child-modal-title"
+                    aria-describedby="child-modal-description"
+                    sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+                  >
+                    <Box sx={{ width: "37.125rem", height: "15.125rem", backgroundColor: theme.palette.primary.light, padding: "25px", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
+                      <Image
+                        src={tick}
+                        height={40}
+                        width={40}
+                        style={{ objectFit: "cover" }}
+                        alt="tick mark"
+                      />
+                      <p id="child-modal-description">
+                        The lead with patient id : {rowData?.patientId} has been closed.
+                      </p>
+                      <Box
+                        sx={{
+                          width: "100%",
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          marginTop: "2.625rem",
+                        }}
+                      >
+                        <Typography
+                          onClick={() => setOpenChildCloseLead(false)}
+                          sx={{
+                            color: theme.palette.primary.main,
+                            cursor: "pointer",
+                            ":hover": {
+                              transform: "scale(1.1)",
+                            },
+                          }}
+                        >
+                          OK
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Modal>
+                </React.Fragment>
 
-          </Grid>
-        </>
-      )}
-    </Grid>
+                {
+                  openSDModal &&
+                  <Box>
+                    <Box>
+                      <Modal
+                        open={openSDModal}
+                        onClose={() => setOpenSDModal(false)}
+                        sx={{ display: "flex", justifyContent: "center", paddingTop: "4rem" }}
+                      >
+                        <Box sx={{ width: "37.125rem", height: "15.125rem", backgroundColor: theme.palette.primary.light, padding: "25px" }}
+                        >
+                          <Box sx={{ paddingBottom: "0.5rem" }}>
+                            <Typography id="modal-modal-title" variant="h6" component="h2">
+                              Select the date range
+                            </Typography>
+                          </Box>
+
+                          <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                            <Box>
+                              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                <DatePicker
+                                  label={
+                                    <span>
+                                      <span>From</span>
+                                      <span style={{ color: "red" }}>*</span>
+                                    </span>
+                                  }
+                                  // value={dayjs(saveDataFrom)}
+                                  value={saveDataFrom ? dayjs(saveDataFrom) : null}
+                                  onChange={(newValue) => handleFromDate(newValue)}
+                                  disableHighlightToday
+                                  format="DD/MM/YYYY"
+                                  minDate={dayjs('2023-01-01')}
+                                  slotProps={{
+                                    actionBar: { actions: ['clear', 'cancel'], onClear: () => setSaveDataFrom(null) },
+                                    textField: { size: 'small' }
+                                  }}
+                                  disableFuture
+                                />
+                              </LocalizationProvider>
+                            </Box>
+
+                            <Box>
+                              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                <DatePicker
+                                  label={
+                                    <span>
+                                      <span>To</span>
+                                      <span style={{ color: "red" }}>*</span>
+                                    </span>
+                                  }
+
+                                  value={saveDataTo ? dayjs(saveDataTo) : null}
+                                  // value={dayjs(saveDataTo)}
+                                  onChange={(newValue) => handleToDate(newValue)}
+                                  disableHighlightToday
+                                  format="DD/MM/YYYY"
+                                  slotProps={{
+                                    actionBar: { actions: ['clear', 'cancel'], onClear: () => setSaveDataTo(null) },
+                                    textField: { size: 'small' }
+                                  }}
+                                  disableFuture
+                                />
+                              </LocalizationProvider>
+                            </Box>
+                          </Box>
+
+
+                          <Stack spacing={2} direction="row" sx={{ mt: 6, float: "right" }}>
+                            <Button onClick={() => setOpenSDModal(false)}>
+                              CANCEL
+                            </Button>
+                            <Button variant="contained"
+                              style={{ borderRadius: "0.25rem", boxShadow: "none" }}
+                              onClick={handleConfirmToSaveData}
+                            >
+                              CONFIRM
+                            </Button>
+                          </Stack>
+
+
+                        </Box>
+
+                      </Modal>
+                    </Box>
+                  </Box>
+                }
+              </Box>
+            </Box>}
+      </PageContainer>
+    </Box>
   );
 };
 
-export default AddressForm;
+// Define the layout for the CallerAgent component.
+CallerAgent.getLayout = function getLayout(page: React.ReactElement) {
+  return <Layout>{page}</Layout>;
+};
 
-import React from 'react';
-import { TextField, CircularProgress, InputAdornment } from '@mui/material';
-import RoomIcon from '@mui/icons-material/Room';
-import { geocodeByAddress } from 'react-places-autocomplete';
 
-const DetectCurrentLocation = ({ onLocationDetected }) => {
-  const [isLocating, setIsLocating] = React.useState(false);
-  const [displayAddress, setDisplayAddress] = React.useState("");
+// Server-side props function to handle authentication.
+export function getServerSideProps(context: any) {
+  return protectedPageRoute(context, null, async () => {
+    return {
+      props: {},
+    };
+  });
+}
 
-  const handleDetectLocation = () => {
-    if (!navigator.geolocation) {
-      console.error("Geolocation is not supported by this browser.");
-      return;
-    }
+// Export the CallerAgent component as the default export.
+export default CallerAgent;
 
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        try {
-          const results = await geocodeByAddress(`${latitude}, ${longitude}`);
-          const selectedAddress = results[0].formatted_address;
-          console.log("Address",selectedAddress)
-          setDisplayAddress(selectedAddress);
 
-          const addressComponents = results[0].address_components;
 
-          const city = addressComponents.find(c => c.types.includes("locality"))?.long_name || "";
-          const state = addressComponents.find(c => c.types.includes("administrative_area_level_1"))?.long_name || "";
-          const postalCode = addressComponents.find(c => c.types.includes("postal_code"))?.long_name || "";
+// Import necessary components and modules
+import CustomLabel from "@/components/CustomLabel";
+import Layout from "@/components/Layout";
+import CallerAgentRefillList from "@/components/CallerAgentRefillList";
+import {
+  Box,
+  TextField,
+  Stack,
+  Button,
+} from "@mui/material";
+import {
+  FormControlLabel,
+  Modal,
+  Radio,
+  RadioGroup,
+  Typography,
+} from "@mui/material";
+import Image from "next/image";
+import React, { useEffect, useState } from "react";
+import { getRefillReminders, captureCustomerResponse, unlockCallCenterOrder, enableDND } from "@/modules";
+import theme from "@/theme";
+import dayjs from "dayjs";
+import "dayjs/locale/en-gb";
+import tick from "../../public/images/blueTick.png";
+import DispositionFormCA from "./DispositionFormCA";
+import { handleApiError } from "@/utils/handleApiError";
+import apiHelper from "ui/apiHelper";
 
-          onLocationDetected({
-            address: selectedAddress,
-            city,
-            state,
-            postalCode
-          });
-        } catch (error) {
-          console.error("Error detecting location:", error);
-        } finally {
-          setIsLocating(false);
-        }
-      },
-      (error) => {
-        console.error("Geolocation error:", error);
-        setIsLocating(false);
-      }
-    );
+const CallerAgentRefillReminder = (props: any) => {
+  const { filters, tab, leadStatusRefillRem } = props;
+
+  // Define styles for the modal
+  const style = {
+    position: "absolute" as "absolute",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    bgcolor: "background.paper",
+    width: "594px",
+    // height: '530px',
+    p: 4,
+    // '& .MuiBackdrop-root': { backgroundColor: 'transparent' }
   };
+
+  // State variables
+  const [tableData, setTableData] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [paymentspending, setPaymentspending] = useState<number>(0);
+  // Table State variables
+  const [totalRecords, setTotalRecords] = useState<any>();
+  const [pageNumberClicked, setPageNumberClicked] = useState<any>(1);
+  const [pageSize, setPageSize] = useState<any>(10);
+  const [leadStatus, setLeadStatus] = useState<any>("All");
+  const [reminderStatus, setReminderStatus] =
+    useState<any>("No Response");
+  const [value, setValue] = useState<any>(null);
+  const [modifiedDate, setModifiedDate] = useState<string>("");
+
+  // State variables for modal interactions
+  const [openCaptureResponse, setOpenCaptureResponse] = useState(false);
+  const [valueCapture, setValueCapture] = useState("yes");
+  const [responseText, setResponseText] = useState("");
+  const [rowData, setRowData] = useState<any>();
+  const [valueFollowups, setValueFollowups] = useState("Yes");
+  const [showCloseLead, setShowCloseLead] = useState(false);
+  const [rowDataLead, setRowDataLead] = useState<any>([]);
+  const [openChildCloseLead, setOpenChildCloseLead] = useState(false);
+  const [pdfModalOpen, setPdfModalOpen] = React.useState(false)
+  const [countRecords, setCountRecords] = React.useState(0)
+
+  // Function to fetch refill reminders
+  // const getRefillReminder = () => {
+  //   setIsLoading(true);
+  //   getRefillReminders(
+  //     {
+  //       leadStatus: leadStatusRefillRem,
+  //       date: filters.date,
+  //       searchString: filters.searchString,
+  //       refillStatus: filters.refillStatus,
+  //       page: pageNumberClicked,
+  //       limit: pageSize,
+  //       unit: filters.unit.trim()
+  //     }).then(res => {
+  //       setIsLoading(false);
+  //       setCountRecords(res?.totalRecords)
+  //       if (!(typeof res?.data == 'string') && res?.totalRecords) {
+  //         setTableData(res?.data)
+  //         setTotalRecords(res?.totalRecords)
+  //       } else setTableData([])
+  //     }).catch(err => {
+  //       setIsLoading(false);
+  //       setTableData([])
+  //     });
+  // }
+
+  const getRefillReminder = async () => {
+    try {
+      setIsLoading(true);
+
+      const response = await getRefillReminders({
+        leadStatus: leadStatusRefillRem,
+        date: filters.date,
+        searchString: filters.searchString,
+        refillStatus: filters.refillStatus,
+        page: pageNumberClicked,
+        limit: pageSize,
+        unit: filters.unit.trim(),
+      });
+
+      setCountRecords(response?.totalRecords);
+
+      if (!(typeof response?.data === "string") && response?.totalRecords) {
+        setTableData(response?.data);
+        setTotalRecords(response?.totalRecords);
+      } else {
+        setTableData([]);
+      }
+    } catch (error) {
+      setTableData([]);
+      handleApiError(error); // Optional: use your centralized error handler
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  // Effect to fetch refill reminder order when filters, page, or page size change
+  useEffect(() => {
+
+    // Function to fetch high value order data
+    const fetchData = () => {
+      getRefillReminder()
+    };
+
+    // Fetch data on component mount and whenever dependencies change
+    fetchData();
+
+    if (!pdfModalOpen) {
+      const intervalId = setInterval(fetchData, 5000);
+      return () => clearInterval(intervalId);
+    }
+  }, [filters, pageNumberClicked, pageSize, pdfModalOpen]);
+
+  // Function to open the capture response modal
+  const handleOpenCaptureResponse = (value: any) => {
+    setOpenCaptureResponse(true);
+    setRowData(value);
+  };
+
+  // Function to open the "Close Lead" modal
+  const handleShowCloseLead = (value: any) => {
+    setShowCloseLead(true);
+    setRowDataLead(value);
+  };
+
+  // Event handler for capturing the customer's response change
+  const handleCaptureChange = (event: any) => {
+    setValueCapture(event.target.value);
+  };
+
+  // Event handler for follow-ups change
+  const handleFollowupsChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setValueFollowups((event.target as HTMLInputElement).value);
+  };
+
+
+  // Event handler for submitting the customer's response
+  // const handleSubmitCapture = (selectedReason: any, valueFollowups: any, followUpDate: any, valueTime, selectedCD, selectedL1, selectedL2, additionalComment) => {
+  //   //setOpenCaptureResponse(false);
+  //   // console.log('received',valueFollowups,selectedReason)
+  //   // if (valueFollowups === "No") {
+  //   //   setShowCloseLead(true);
+  //   //   handleShowCloseLead(rowData)
+  //   // } else if (valueFollowups === "Yes") {
+  //   //   captureCustomerResponse({
+  //   //     "customerResponse": valueCapture === "yes",
+  //   //     "comments": responseText,
+  //   //     "patientId": rowData.patientId,
+  //   //     "prescriptionId": rowData.prescriptionId,
+  //   //     "followUpStatus": valueFollowups
+  //   //   }).then(res => getRefillReminder());
+  //   // }
+  //   // setResponseText('')
+  //   //   ;
+  //   captureCustomerResponse({
+  //     "customerResponse": valueCapture === "yes",
+  //     //"comments": selectedReason,
+  //     "comments": additionalComment,
+  //     "patientId": rowData.patientId,
+  //     "orderId": rowData?.orderId,
+  //     "prescriptionId": rowData.prescriptionId,
+  //     "followUpStatus": valueFollowups,
+  //     ...(followUpDate && { followUpDate: followUpDate }),
+  //     "callDisposition": selectedCD,
+  //     "serviceDispositionL1": selectedL1,
+  //     "serviceDispositionL2": selectedL2,
+  //     "timings": valueTime?.format('hh:mm A')
+
+  //   }).then(res => getRefillReminder())
+  // };
+
+
+  const handleSubmitCapture = async (
+    selectedReason: any,
+    valueFollowups: any,
+    followUpDate: any,
+    valueTime: any,
+    selectedCD: any,
+    selectedL1: any,
+    selectedL2: any,
+    additionalComment: string,
+    dnd: boolean,                   // ✅ new
+    phoneNumber: string
+  ) => {
+    try {
+      await captureCustomerResponse({
+        customerResponse: valueCapture === "yes",
+        comments: additionalComment,
+        patientId: rowData.patientId,
+        orderId: rowData?.orderId,
+        prescriptionId: rowData.prescriptionId,
+        followUpStatus: valueFollowups,
+        ...(followUpDate && { followUpDate }),
+        callDisposition: selectedCD,
+        serviceDispositionL1: selectedL1,
+        serviceDispositionL2: selectedL2,
+        timings: valueTime?.format("hh:mm A"),
+        dnd,
+        phoneNumber,
+      });
+
+      getRefillReminder();
+    } catch (error) {
+      handleApiError(error);
+    }
+  };
+
+
+  // Event handler for canceling the customer response modal
+  const handleCancelClick = () => {
+    setResponseText('');
+    setOpenCaptureResponse(false)
+  }
+
+  // Event handler for closing the lead
+  // const handleCloseLead = (data: any, valueFollowups, followUpDate, valueTime, selectedCD, selectedL1, selectedL2, additionalComment) => {
+  //   setShowCloseLead(false);
+  //   setOpenChildCloseLead(true);
+  //   captureCustomerResponse({
+  //     "customerResponse": false,
+  //     //"comments": " ",
+  //     "patientId": data.patientId,
+  //     "prescriptionId": data.prescriptionId,
+  //     "followUpStatus": "No",
+  //     "callDisposition": selectedCD,
+  //     "serviceDispositionL1": selectedL1,
+  //     "serviceDispositionL2": selectedL2,
+  //     "comments": additionalComment
+  //   }).then(res => getRefillReminder());
+  // };
+
+  const handleCloseLead = async (
+    data: any,
+    valueFollowups: any,
+    followUpDate: any,
+    valueTime: any,
+    selectedCD: any,
+    selectedL1: any,
+    selectedL2: any,
+    additionalComment: string
+  ) => {
+    try {
+      setShowCloseLead(false);
+      setOpenChildCloseLead(true);
+
+      await captureCustomerResponse({
+        customerResponse: false,
+        patientId: data.patientId,
+        prescriptionId: data.prescriptionId,
+        followUpStatus: "No",
+        callDisposition: selectedCD,
+        serviceDispositionL1: selectedL1,
+        serviceDispositionL2: selectedL2,
+        comments: additionalComment,
+        dnd: false,
+        phoneNumber: rowData?.phoneNumber,
+      });
+
+      getRefillReminder();
+    } catch (error) {
+      handleApiError(error);
+    }
+  };
+
+
+  //unlocking order
+  const unlockingOrder = async (row: any) => {
+    try {
+      const res = await unlockCallCenterOrder({
+        "patientId": row?.patientId,
+        "prescriptionId": row?.prescriptionId,
+        "name": tab,
+      })
+    }
+    catch (err) {
+      handleApiError(err);
+    }
+  }
+
+  //closing capture response modal
+  const closingCaptureResponseModal = (row: any) => {
+    setOpenCaptureResponse(false)
+    unlockingOrder(row)
+  }
+
+  //closing close lead modal
+  const closingCloseLeadModal = () => {
+    setShowCloseLead(false)
+    unlockingOrder(rowDataLead)
+  }
+
+  //submit for dnd
+  const handleDND = async (row: any) => {
+    console.log('row ji', row)
+    try {
+      const res = await enableDND({
+        "phoneNumber": row?.phoneNumber,
+        "patientId": row?.patientId,
+        "dnd": true
+      })
+    }
+    catch (error) {
+      handleApiError(error);
+    }
+  }
 
   return (
     <>
-      <TextField
-        label="Detect Current Location"
-        variant="outlined"
-        fullWidth
-        value={displayAddress}
-        onClick={handleDetectLocation}
-        InputProps={{
-          readOnly: true,
-          startAdornment: (
-            <InputAdornment position="start">
-              <RoomIcon color="action" />
-            </InputAdornment>
-          ),
-          style: { cursor: 'pointer', backgroundColor: '#f5f5f5' }
-        }}
-        style={{ marginBottom: "1rem" }}
-      />
-      {isLocating && <CircularProgress size={24} style={{ marginBottom: "1rem" }} />}
+      <Typography sx={{ color: '#034EA1' }}>Count: {countRecords}</Typography>
+      <Box sx={{
+        display: "flex",
+        justifyContent: "space-between",
+        flexDirection: "column",
+      }} >
+        <Box>
+          {/* Render the CallerAgentRefillList component */}
+          <CallerAgentRefillList
+            tableData={tableData}
+            isLoading={isLoading}
+            pageNumberClicked={pageNumberClicked}
+            setPageNumberClicked={(page: number) => setPageNumberClicked(page)}
+            recordsToShow={pageSize}
+            setRecordsToShow={(ps: number) => setPageSize(ps)}
+            totalRecords={totalRecords}
+            setTotalRecords={setTotalRecords}
+            handleCapture={handleOpenCaptureResponse}
+            handleCloseLead={handleShowCloseLead}
+            reminderStatus={reminderStatus}
+            tab={tab}
+            handleViewPdf={(e) => setPdfModalOpen(e)}
+          />
+
+          {/* <Box>           
+          <Modal open={openCaptureResponse} onClose={() => setOpenCaptureResponse(false)}>
+            <Box sx={style}>
+              <form onSubmit={handleSubmitCapture}>
+                <Box sx={{ display: "flex", flexDirection: "column" }}>
+                  <Typography
+                    id="modal-modal-title"
+                    variant="h6"
+                    component="h2"
+                  >
+                    Capture Customer's Response
+                  </Typography>
+
+                  <Box sx={{ marginTop: "20px" }}>
+                    <Typography>Did the customer answer the call?</Typography>
+                    <RadioGroup
+                      row
+                      aria-labelledby="demo-row-radio-buttons-group-label"
+                      name="row-radio-buttons-group"
+                      value={valueCapture}
+                      onChange={handleCaptureChange}
+                    >
+                      <FormControlLabel
+                        value="yes"
+                        control={<Radio />}
+                        label="Yes"
+                      />
+                      <FormControlLabel
+                        value="no"
+                        control={<Radio />}
+                        label="No"
+                      />
+                    </RadioGroup>
+                  </Box>
+
+                  {valueCapture === "yes" ? (
+                    <Box>
+                      <TextField
+                        multiline
+                        rows={4}
+                        placeholder="write customer response here"
+                        sx={{ marginTop: "20px", width: "100%" }}
+                        value={responseText}
+                        onChange={(
+                          event: React.ChangeEvent<HTMLInputElement>
+                        ) => {
+                          //setResponseText(event.target.value);
+                          setResponseText(event.target.value.replace(/<\/?[^>]+(>|$)/g, ''))
+                        }}
+                      />
+                      {rowData?.followUp > 1 ? (
+                        <Box sx={{ marginTop: "20px" }}>
+                          <Typography>
+                            Does this require more follow ups or would you like
+                            to close the lead?
+                          </Typography>
+                          <RadioGroup
+                            row
+                            aria-labelledby="demo-row-radio-buttons-group-label"
+                            name="row-radio-buttons-group"
+                            value={valueFollowups}
+                            onChange={handleFollowupsChange}
+                          >
+                            <FormControlLabel
+                              value="Yes"
+                              control={<Radio />}
+                              label="Require more follow ups"
+                            />
+                            <FormControlLabel
+                              value="No"
+                              control={<Radio />}
+                              label="Close the Lead"
+                            />
+                          </RadioGroup>
+                        </Box>
+                      ) : (
+                        <Typography sx={{ marginTop: "20px" }}>
+                          Note: This lead will be closed as there are no more
+                          follow ups left for this customer.
+                        </Typography>
+                      )}
+                    </Box>
+                  ) : (
+                    <Typography sx={{ marginTop: "20px" }}>
+                      Note: There are {rowData?.RemFollowUps} more follow ups
+                      left
+                    </Typography>
+                  )}
+
+                  <Stack
+                    direction="row"
+                    sx={{
+                      width: "100%",
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      marginTop: "2.625rem",
+                    }}
+                  >
+                    <Button onClick={handleCancelClick}>CANCEL</Button>
+                    <Button variant="contained" type="submit" sx={{ borderRadius: "0.25rem" }}                      >
+                      SUBMIT
+                    </Button>
+                  </Stack>
+                </Box>
+              </form>
+            </Box>
+          </Modal>
+        </Box>  */}
+
+          {/* Render the modal for capturing the customer's response */}
+          {
+            openCaptureResponse && <DispositionFormCA open={openCaptureResponse} onClose={() => closingCaptureResponseModal(rowData)} handleSubmitCapture={handleSubmitCapture} rowData={rowData} handleDND={() => handleDND(rowData)} />
+          }
+
+          <Box>
+            {/* Render the modal for closing the lead */}
+            <Modal
+              open={showCloseLead}
+              onClose={closingCloseLeadModal}
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Box sx={{
+                width: "37.125rem",
+                backgroundColor: theme.palette.primary.light,
+                padding: "25px",
+              }}>
+                <Typography id="modal-modal-title" variant="h6" component="h2">
+                  Close the lead
+                </Typography>
+                <Typography sx={{ paddingTop: "20px" }}>
+                  Do you confirm to close the lead?
+                </Typography>
+                <Stack direction="row" sx={{
+                  width: "100%",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginTop: "2.625rem",
+                }}>
+                  <Button onClick={closingCloseLeadModal}>CANCEL</Button>
+                  <Button onClick={() => handleCloseLead(rowDataLead)} variant="contained" sx={{ borderRadius: "0.25rem" }}>YES, I CONFIRM</Button>
+                </Stack>
+              </Box>
+            </Modal>
+          </Box>
+
+          <Box>
+            {/* Render the modal for child close lead confirmation */}
+            <Modal
+              open={openChildCloseLead}
+              onClose={() => setOpenChildCloseLead(false)}
+              aria-labelledby="child-modal-title"
+              aria-describedby="child-modal-description"
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Box
+                sx={{
+                  width: "37.125rem",
+                  height: "15.125rem",
+                  backgroundColor: theme.palette.primary.light,
+                  padding: "25px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexDirection: "column",
+                }}
+              >
+                <Image
+                  src={tick}
+                  height={40}
+                  width={40}
+                  style={{ objectFit: "cover" }}
+                  alt="tick mark"
+                />
+                <p id="child-modal-description">
+                  The lead with patient id : {rowDataLead?.patientId} has been
+                  closed.
+                </p>
+                <Box
+                  sx={{
+                    width: "100%",
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: "2.625rem",
+                  }}
+                >
+                  <Typography
+                    onClick={() => setOpenChildCloseLead(false)}
+                    sx={{
+                      color: theme.palette.primary.main,
+                      cursor: "pointer",
+                      ":hover": {
+                        transform: "scale(1.1)",
+                      },
+                    }}
+                  >
+                    OK
+                  </Typography>
+                </Box>
+              </Box>
+            </Modal>
+          </Box>
+        </Box>
+      </Box>
     </>
   );
 };
 
-export default DetectCurrentLocation;
+export default CallerAgentRefillReminder;
 
 
-import theme from '@/theme';
-import { TextField } from '@mui/material';
-import React from 'react';
-import PlacesAutocomplete, {
-    geocodeByAddress,
-    getLatLng,
-} from "react-places-autocomplete";
+import { Box, Button, FormControl, FormControlLabel, FormLabel, Grid, Modal, Radio, RadioGroup, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, TextareaAutosize, Typography, tableCellClasses } from "@mui/material";
+import React from "react";
+import { HeadCell } from "ui/common/table/table";
+import PaginatedTable from "ui/common/table/PaginatedTable";
+import theme from "@/theme";
+import { format } from "date-fns";
+import { conversionPendingResponse, enableDND, getConversionPendingReasons, lockCallCenterOrder, unlockCallCenterOrder } from "@/modules";
+import Lead from "./LeadColor";
+import Image from "next/image";
+import tick from "../../public/images/blueTick.png";
+import DispositionFormCA from "./DispositionFormCA";
+import CustomModal from "ui/common/customModal/CustomModal";
 
-const AutocompleteAddress = ({ onAddressChangeData, value, onChange, error, isEdit, helperText,onBlurParent }) => {
-    const [address, setAddress] = React.useState(" ");
-    const [flag, setFlag] = React.useState(0)
-    const [isAddressSelected, setIsAddressSelected] = React.useState(false)
-    const [noOption, setNoOption] = React.useState(false)
-    const [hideSuggestion,setHideSuggestion]=React.useState(false)
 
-    const handleSelect = async (selectedAddress: any) => {
-        try {
-            const results = await geocodeByAddress(selectedAddress);
-            const latLng = await getLatLng(results[0]);
+const ConversionPendingList = (props: any) => {
+    const {
+        tableData,
+        isLoading,
+        pageNumberClicked,
+        setPageNumberClicked,
+        recordsToShow,
+        setRecordsToShow,
+        totalRecords,
+        setTotalRecords,
+        getConversionPendingData,
+        tab,
+        handleViewPdf
+    } = props;
 
-            setAddress(selectedAddress);
-            setIsAddressSelected(true)
-            setFlag(1)
-            // console.log(results[0].address_components)
+    const tableRef: any = React.useRef();
+    const [data, setData] = React.useState<any[]>(
+        tableData?.length > 0 ? tableData : []
+    );
 
-            // Accessing the city and state from the results
-            const citySel = results[0].address_components.find(
-                (component: any) => component.types.includes('locality')
-            )?.long_name;
+    // Use the useEffect hook to update data when tableData changes
+    React.useEffect(() => {
+        setData(tableData ? tableData : []);
+    }, [tableData]);
 
-            const stateSel = results[0].address_components.find(
-                (component: any) => component.types.includes('administrative_area_level_1')
-            )?.long_name;
+    const [loader, setLoader] = React.useState<boolean>(true);
+    const [open, setOpen] = React.useState<boolean>(false)
+    const [selectedValue, setSelectedValue] = React.useState<string>('');
+    const [commentValue, setCommentValue] = React.useState('');
+    const [selectedRowData, setSelectedRowData] = React.useState<string>('')
+    const [reasons, setReasons] = React.useState([])
+    const [submitModal, setSubmitModal] = React.useState<boolean>(false)
+    const [rowData, setRowData] = React.useState([])
+    const [openLockerInfoModal, setOpenLockerInfoModal] = React.useState<boolean>(false)
+    const [lockerName, setLockerName] = React.useState('')
 
-            // Accessing the postal code from the results
-            let postalCode = results[0].address_components.find((component: any) =>
-                component.types.includes("postal_code")
-            );
-
-            // If postal code is not available in the address components, perform reverse geocoding
-            if (!postalCode) {
-                const reverseGeocodeResults = await geocodeByCoordinates(latLng);
-                postalCode = reverseGeocodeResults[0].address_components.find(
-                    (component: any) => component.types.includes("postal_code")
-                );
-            }
-
-            postalCode = postalCode ? postalCode.long_name : "Postal code not found";
-
-            onAddressChangeData({
-                postalCode: postalCode,
-                city: citySel,
-                state: stateSel,
-                address:selectedAddress
-            })
-
-        } catch (error) {
-            console.error("Error:", error);
-        }
-    };
-
-    const geocodeByCoordinates = async ({ lat, lng }) => {
-        return await geocodeByAddress(`${lat}, ${lng}`);
-    };
-    const handleInputChange = (input) => {
-        setAddress(input);
-        if(noOption === true){
-            setAddress(input)
-        }
-        setHideSuggestion(false)
-    };
 
     React.useEffect(() => {
-        if (isEdit && flag == 0) {
-            setAddress(value)
-        }
-    }, [value])
+        setLoader(isLoading);
+    }, [isLoading]);
 
-    const handleBlur = () => {
-        if (!isAddressSelected) {
-            setNoOption(true);
-        }
-        onBlurParent(noOption,address)
-        setHideSuggestion(true)
+    const getIsLocked = (row: any) => {
+        return (
+            row.isLock === true
+        );
+    };
+
+
+    const headCell = [
+        {
+            id: "",
+            numeric: true,
+            disablePadding: true,
+            label: "",
+            sortable: false,
+            cell: (row: any) => (
+                <Grid>
+                    <Typography >{"  "}</Typography>
+                </Grid>
+            ),
+        },
+        {
+            id: "patientId",
+            numeric: true,
+            disablePadding: true,
+            label: "Patient Id",
+            sortable: true,
+            minWidth: 100,
+            cell: (row: any) => (
+                <Grid>
+                    <Typography>{row.patientId}</Typography>
+                </Grid>
+            ),
+        },
+        {
+            id: "patientName",
+            numeric: true,
+            disablePadding: true,
+            label: "Patient Name",
+            sortable: true,
+            cell: (row: any) => (
+                <Grid sx={{ display: "flex" }}>
+                    <Typography>{row.patientName}</Typography>
+
+                </Grid>
+            ),
+        },
+        {
+            id: "unit",
+            numeric: true,
+            disablePadding: true,
+            label: "Unit",
+            sortable: true,
+            cell: (row: any) => (
+                <Grid sx={{ display: "flex" }}>
+                    <Typography>{row.unit}</Typography>
+
+                </Grid>
+            ),
+        },
+        {
+            id: "gender",
+            numeric: true,
+            disablePadding: true,
+            label: "Gender",
+            sortable: false,
+            cell: (row: any) => (
+                <Grid sx={{ display: "flex" }}>
+                    <Typography>{row.gender} </Typography>
+                </Grid>
+            ),
+        },
+        {
+            id: "LeadStatus",
+            numeric: true,
+            disablePadding: true,
+            label: "Lead Status",
+            sortable: false,
+            cell: (row: any) => (
+                <Grid sx={{ display: "flex" }}>
+                    <Lead value={row?.leadStatus} />
+                </Grid>
+            ),
+        },
+        {
+            id: "PhoneNumber",
+            numeric: true,
+            disablePadding: true,
+            label: "Phone Number",
+            sortable: false,
+            cell: (row: any) => (
+                <Grid sx={{ display: "flex" }}>
+                    <Typography>{row.phoneNumber} </Typography>
+                </Grid>
+            ),
+        },
+        {
+            id: "createDateTime",
+            numeric: true,
+            disablePadding: true,
+            label: "Created Date",
+            sortable: false,
+            cell: (row: any) => (
+                <Grid sx={{ display: "flex" }}>
+                    <Typography>{format(new Date(row.createdDate), "dd/MM/yyyy")}</Typography>
+                </Grid>
+            ),
+        },
+        // {
+        //     id: "response",
+        //     numeric: "",
+        //     disablePadding: true,
+        //     label: "Response",
+        //     sortable: false,
+        //     cell: (row: any) => (
+        //         <Grid sx={{ display: "flex" }}>
+        //             <Typography>{row.comments} </Typography>
+        //         </Grid>
+
+        //     ),
+        // },
+        {
+            id: "lock",
+            numeric: true,
+            disablePadding: true,
+            label: "",
+            sortable: false,
+            minWidth: 20,
+            cell: (row: any) => (
+                <Box sx={{ cursor: "pointer" }}
+                    onClick={() => handleOrderLockedBy(row)}
+                >
+                    {getIsLocked(row) && <i className="ri-lock-line"></i>}
+                </Box>
+            ),
+        },
+    ];
+
+    const icon = {
+        id: "captureResponse",
+        numeric: false,
+        disablePadding: true,
+        label: "",
+        sortable: false,
+        stickyClass: "stickyRight",
+        minWidth: 20,
+        cell: (row: any) => {
+            return (
+                <div>
+                    {/* Conditional rendering of icons based on lead status */}
+                    {
+                        row.leadStatus === "CLOSED" || row.leadStatus === "CONVERTED" || row.isLock === true ?
+                            <Box>
+                                <i className="ri-add-line" style={{ fontSize: "20px", color: theme.palette.grey[400] }}></i>
+                            </Box>
+                            :
+                            <Box>
+                                <i className="ri-add-line" style={{ fontSize: "20px", cursor: "pointer" }} onClick={() => handleCaptureResponseIconClick(row)}></i>
+                            </Box>
+                    }
+
+                </div>
+            );
+
+        },
 
     };
 
-    return (
-        <div>
-            <PlacesAutocomplete
-                value={address}
-                // onChange={value ? onChange : handleInputChange}
-                // value={address}               
-                onChange={handleInputChange}
-                onSelect={handleSelect}
-            >
-                {({ getInputProps, suggestions, getSuggestionItemProps, loading }) => (
-                    <div>
-                        {isEdit ? <TextField
-                            name="address"
-                            label={
-                                <span>
-                                    <span>Address</span>
-                                    <span style={{ color: "red" }}>*</span>
-                                </span>
-                            }
-                            variant="outlined"
-                            fullWidth
-                            style={{ marginBottom: "1rem" }}
-                            {...getInputProps({
-                                placeholder: "Address...",
-                                className: "location-search-input",
-                            })}
-                            error={error}
-                            helperText={helperText}
-                            // value={value}
-                            // onChange={onChange}
-                            onBlur={handleBlur}
-                        />
-                            : <TextField
-                                name="address"
-                                label={
-                                    <span>
-                                        <span>Address</span>
-                                        <span style={{ color: "red" }}>*</span>
-                                    </span>
-                                }
-                                variant="outlined"
-                                fullWidth
-                                style={{ marginBottom: "1rem" }}
-                                {...getInputProps({
-                                    placeholder: "Address...",
-                                    className: "location-search-input",
+    // Add the icon column to the headCell definitions
+    headCell.push(icon)
+
+    const headCells: readonly HeadCell[] = headCell;
+
+
+    const handleCaptureResponse = (data: React.SetStateAction<string>) => {
+        setOpen(true)
+        getConversionPendingReasonsData()
+        setSelectedRowData(data)
+    }
+
+    const handleRadioChange = (event) => {
+        setSelectedValue(event.target.value);
+    }
+
+    const handleCommentChange = (event) => {
+        setCommentValue(event.target.value)
+    }
+    const handleCancel = () => {
+        setSelectedValue('')
+        setCommentValue('')
+        setOpen(false)
+    }
+    const handleSubmit = (selectedReason: any, valueFollowups: any, followUpDate: any, valueTime: any, selectedCD: any, selectedL1: any, selectedL2: any, additionalComment: any, dnd: boolean,
+        phoneNumber: string) => {
+        conversionPendingResponse({
+            customerResponse: true,
+            //"comments": selectedValue === reasons[4] ? commentValue : selectedValue,
+            //"comments": selectedReason,
+            patientId: selectedRowData,
+            callDisposition: selectedCD,
+            serviceDispositionL1: selectedL1,
+            serviceDispositionL2: selectedL2,
+            comments: additionalComment,
+            dnd,
+            phoneNumber,
+        }).then(res => {
+            getConversionPendingData()
+            setSelectedValue('')
+            setCommentValue('')
+            setOpen(false)
+            setSubmitModal(true)
+        }).catch(err => {
+            console.log(err)
+        });
+    }
+
+    const getConversionPendingReasonsData = async () => {
+        try {
+            const res = await getConversionPendingReasons()
+            setReasons(res.data)
+        } catch (err) {
+            console.log(err)
+        }
+    }
+
+    // Function to expand a row and show prescription details
+    const ExpandRow = (row: any) => {
+        const headCellStyle = { fontWeight: 700, fontSize: "0.875rem" };
+
+        return (
+            <Grid sx={{ mt: 2 }}>
+                {/* Define and render the prescription details */}
+                <Table
+                    sx={{
+                        minWidth: 650,
+                        border: "none",
+                        boxShadow: "none",
+                        [`& .${tableCellClasses.root}`]: { borderBottom: "none" },
+                    }}
+                    aria-label="simple table"
+                >
+                    <TableHead>
+                        <TableRow>
+                            <TableCell sx={headCellStyle}>Prescription File</TableCell>
+                            <TableCell align="left" sx={headCellStyle}>
+                                Prescription ID
+                            </TableCell>
+                            <TableCell align="left" sx={headCellStyle}>
+                                Customer Response
+                            </TableCell>
+                            <TableCell align="left" sx={headCellStyle}>
+                                Advisor's Name
+                            </TableCell>
+                        </TableRow>
+                    </TableHead>
+
+                    <TableBody>
+                        {/* Define and render each prescription row */}
+                        <TableRow>
+                            <TableCell>
+                                <Box
+                                    sx={{
+                                        display: "flex",
+                                        justifyContent: "flex-start",
+                                        alignItems: "center",
+                                    }}
+                                >
+                                    <i
+                                        className="ri-file-text-fill"
+                                        style={{ fontSize: "1.563rem" }}
+                                    />
+                                    <CustomModal
+                                        label="View"
+                                        url={""}
+                                        prescriptionId={row.prescriptionId}
+                                        buttonStyle={{
+                                            color: theme.palette.primary.main,
+                                            fontWeight: 600,
+                                        }}
+                                        handleViewPdf={handleViewPdf}
+                                    />
+                                </Box>
+                            </TableCell>
+                            <TableCell align="left">{row?.prescriptionId}</TableCell>
+                            <Box>
+                                {row?.callDisposition?.length !== null ? <><TableCell align="left" sx={{ display: "flex" }}>{row?.callDisposition}</TableCell>
+                                    <TableCell align="left" sx={{ display: "flex" }}>{row?.serviceDispositionL1}</TableCell>
+                                    <TableCell align="left" sx={{ display: "flex" }}>{row?.serviceDispositionL2}</TableCell>
+                                </> : <TableCell align="left" sx={{ display: "flex" }}>{row?.responseConversionReport[0]?.response}</TableCell>}
+                            </Box>
+
+                            <TableCell align="left">
+                                {row?.responseConversionReport?.map((item: any, idx: any) => {
+                                    return <TableCell align="left" sx={{ display: "flex" }} key={idx}>{item?.responseByName}</TableCell>
                                 })}
-                                error={error}
-                                helperText={helperText}
-                                onBlur={handleBlur}
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+            </Grid>
+        );
+    };
 
-                            />}
-                        <div className="autocomplete-dropdown-container">
-                            {loading && <div>Loading...</div>}
-                            {!hideSuggestion && suggestions.map((suggestion) => {
-                                const style = {
-                                    backgroundColor: suggestion.active ? theme.palette.grey[200] : "#fff",
-                                };
-                                return (
-                                    <div
-                                        {...getSuggestionItemProps(suggestion, { style })}
-                                        key={suggestion.placeId}
+    //locking order
+    const lockingOrder = async (rowData: any) => {
+        const res = await lockCallCenterOrder({
+            "patientId": rowData?.patientId,
+            "prescriptionId": rowData?.prescriptionId,
+            "name": tab
+        })
+    }
+
+    const handleCaptureResponseIconClick = (row: any) => {
+        handleCaptureResponse(row?.patientId)
+        setRowData(row)
+        lockingOrder(row)
+    }
+
+
+    //unlocking order
+    const unlockingOrder = async (row: any) => {
+        const res = await unlockCallCenterOrder({
+            "patientId": row?.patientId,
+            "prescriptionId": row?.prescriptionId,
+            "name": tab,
+        })
+    }
+
+    //closing capture response modal
+    const closingCaptureResponseModal = (row: any) => {
+        setOpen(false)
+        unlockingOrder(row)
+    }
+
+    //currently order is locked by
+    const handleOrderLockedBy = (row: any) => {
+        setOpenLockerInfoModal(true)
+        setLockerName(row?.lockerName)
+    }
+
+    const style = {
+        position: "absolute" as "absolute",
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: 400,
+        bgcolor: "background.paper",
+        boxShadow: 24,
+        p: 4,
+    };
+
+    //submit for dnd
+    const handleDND = async (row: any) => {
+        console.log('row ji', row)
+        const res = await enableDND({
+            "phoneNumber": row?.phoneNumber,
+            "patientId": row?.patientId,
+            "dnd": true
+        })
+    }
+
+    return (
+        <>
+            <Box sx={{ width: "100%", height: 300 }}>
+                <PaginatedTable
+                    totalLength={totalRecords !== 0 && totalRecords}
+                    setPageNumberClicked={setPageNumberClicked}
+                    pageNumberClicked={pageNumberClicked}
+                    setRecordsToShow={setRecordsToShow}
+                    uniqueKey="listOfConversionPending"
+                    rows={data}
+                    headCells={headCells}
+                    tableRef={tableRef}
+                    loading={loader}
+                    pagination={true}
+                    expandIconAt="start"
+                    expandInCols={8}
+                    expandable={ExpandRow}
+                />
+                {/* <Box>
+                    <Modal
+                        open={open}
+                        onClose={() => setOpen(false)}
+                        aria-labelledby="modal-modal-title"
+                        aria-describedby="modal-modal-description"
+                        sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+                    >
+
+                        <Box sx={{ width: "37.5rem", background: "white", padding: "2rem" }}>
+                            <Box>
+                                <Typography id="modal-modal-title" variant="h6" component="h2" sx={{ fontWeight: "bold", fontSize: "1.5rem" }}>
+                                    Capture Customer's Response
+                                </Typography>
+
+                                <FormControl>
+                                    <FormLabel id="demo-radio-buttons-group-label" sx={{ fontWeight: "bold", fontSize: "1rem", paddingTop: "1rem" }}>
+                                        Select Reason<span style={{ color: "red" }}>*</span>
+                                    </FormLabel>
+
+                                    <RadioGroup
+                                        aria-labelledby="demo-radio-buttons-group-label"
+                                        defaultValue="female"
+                                        name="radio-buttons-group"
+                                        value={selectedValue}
+                                        onChange={handleRadioChange}
                                     >
-                                        {suggestion.description}
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                        {reasons?.map((reason, index) => {
+                                            return (
+                                                <FormControlLabel key={index} value={reason} control={<Radio />} label={reason} />
+                                            )
+                                        })}
+                                    </RadioGroup>
 
-                    </div>
-                )}
-            </PlacesAutocomplete>
-        </div>
+                                    {selectedValue === reasons[4] && (
+                                        <Box>
+                                            <TextField
+                                                id="outlined-multiline-static"
+                                                placeholder={'Additional Comments '}
+                                                label='Additional Comments*'
+                                                multiline
+                                                rows={4}
+                                                sx={{
+                                                    height: "8rem", width: "33.5rem",
+                                                }}
+                                                value={commentValue}
+                                                inputProps={{ maxLength: 255 }}
+                                                onChange={handleCommentChange}
+                                            />
+                                        </Box>
+                                    )}
+                                </FormControl>
+
+
+
+                                <Stack direction="row" sx={{ width: "100%", display: "flex", justifyContent: "flex-end", paddingTop: "1rem" }}>
+                                    <Button onClick={handleCancel}>CANCEL</Button>
+                                    <Button variant="contained" sx={{ borderRadius: "0.25rem" }} onClick={handleSubmit} disabled={selectedValue.length <= 0 || (selectedValue === reasons[4] && commentValue.length <= 0)}>SUBMIT</Button>
+                                </Stack>
+                            </Box>
+
+                        </Box>
+                    </Modal>
+                </Box> */}
+                <DispositionFormCA open={open} onClose={() => closingCaptureResponseModal(rowData)} handleSubmitCapture={handleSubmit} conversionPendingTab={'conversion_pending_tab'} handleDND={() => handleDND(rowData)} />
+
+
+                <Box>
+                    <Modal
+                        open={submitModal}
+                        sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+                    >
+                        <Box
+                            sx={{ backgroundColor: theme.palette.primary.light, padding: "25px", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}
+                        >
+                            <Image
+                                src={tick}
+                                height={40}
+                                width={40}
+                                style={{ objectFit: "cover" }}
+                                alt="tick mark"
+                            />
+                            <p>
+                                The response for patient id : {selectedRowData} has been captured successfully.
+                            </p>
+                            <Box
+                                sx={{
+                                    width: "100%",
+                                    display: "flex",
+                                    justifyContent: "flex-end",
+                                    marginTop: "2.625rem",
+                                }}
+                            >
+                                <Typography
+                                    onClick={() => setSubmitModal(false)}
+                                    sx={{
+                                        color: theme.palette.primary.main,
+                                        cursor: "pointer",
+                                        ":hover": {
+                                            transform: "scale(1.1)",
+                                        },
+                                    }}
+                                >
+                                    OK
+                                </Typography>
+                            </Box>
+                        </Box>
+                    </Modal>
+                </Box>
+
+                {/* For locker name of order */}
+                {
+                    openLockerInfoModal && (
+                        <Box>
+                            <Modal
+                                open={openLockerInfoModal}
+                                onClose={() => setOpenLockerInfoModal(false)}
+                            >
+                                <Box sx={style}>
+                                    <Typography variant="h6" component="h2">
+                                        The order has been locked by {lockerName}
+                                    </Typography>
+                                    <Typography onClick={() => setOpenLockerInfoModal(false)} sx={{ color: theme.palette.primary.main, cursor: "pointer", ":hover": { transform: "scale(1.1)", }, display: "flex", alignItems: "center", justifyContent: "center", pt: "1rem" }}>
+                                        OK
+                                    </Typography>
+                                </Box>
+                            </Modal>
+                        </Box>
+                    )
+                }
+            </Box>
+        </>
     );
 };
 
-export default AutocompleteAddress
+export default ConversionPendingList;
+
+
+//High order value component
+import Layout from "@/components/Layout";
+import protectedPageRoute from "@/helper/requireAuthentication";
+import theme from "@/theme";
+import {
+    Box, Button, Modal, Typography,
+} from "@mui/material";
+import React, { useEffect } from "react";
+import PageContainer from "ui/common/containers/PageContainer";
+import { NextPageWithLayout } from "@/pages/_app";
+import {
+    enableDND, generalLeadsCaptureResponse, getGeneralLeadsOrderData,
+    unlockCallCenterOrder
+} from "@/modules";
+import tick from "../../../../apps/panel/public/images/blueTick.png";
+import Image from "next/image";
+import DispositionFormCA from "./DispositionFormCA";
+import GeneralLeadsOrderList from "./GeneralLeadsOrderList";
+import { handleApiError } from "@/utils/handleApiError";
+
+
+
+const BASE_URL = `${process.env.NEXT_PUBLIC_BASE_URL}`;
+
+const HighValueOrder: NextPageWithLayout = (props: any) => {
+    const { filters, tab } = props;
+
+    //it stores the data shown on dasboard 
+    const [tableData, setTableData] = React.useState([]);
+    const [isLoading, setIsLoading] = React.useState<boolean>(false);
+
+    // Table State variables
+    const [totalRecords, setTotalRecords] = React.useState<any>();
+    const [pageNumberClicked, setPageNumberClicked] = React.useState<any>(1);
+    const [pageSize, setPageSize] = React.useState<any>(10);
+    const [closeLeadModal, setCloseLeadModal] = React.useState(false)
+    const [rowDataCL, setRowDataCL] = React.useState([])
+    const [captureResponseModal, setCaptureResponseModal] = React.useState(false)
+    const [rowDataCR, setRowDataCR] = React.useState<any>([])
+    //const [selectedReason, setSelectedReason] = React.useState('')
+    const [openNextStepModal, setOpenNextStepModal] = React.useState(false)
+    //const [valueFollowups, setValueFollowups] = React.useState('')
+    const [successMsgModal, setSuccessMsgModal] = React.useState(false)
+    const [captureResponseFlag, setCaptureResponseFlag] = React.useState(false)
+    const [pdfModalOpen, setPdfModalOpen] = React.useState(false)
+    const [countRecords, setCountRecords] = React.useState(0)
+
+
+    const reasons = [
+        { id: 1, value: "Purchased medicines from local pharmacy" },
+        { id: 2, value: "Purchased at the Manipal Hospitals physical pharmacy" },
+        { id: 3, value: "WhatsApp number is different from the Manipal Hospitals registered number" },
+        { id: 4, value: "The patient admitted to the Hospital" },
+        { id: 5, value: "The patient will buy in the future, have seen the link" },
+        { id: 6, value: "Patient expecting higher discounts" },
+        { id: 7, value: "The patient did not pick up the call, or the call got disconnected" },
+        { id: 8, value: "The patient did not receive the Epharmacy link" },
+        { id: 9, value: "The patient is not able to operate the Epharmacy App" },
+        { id: 10, value: "Trail order to check the flow" },
+        { id: 11, value: "OTP SMS not received by the patient" }
+    ]
+
+    // Function to fetch refill reminders
+    // const getGeneralLeadsOrderDataFn = () => {
+    //     setIsLoading(true);
+    //     getGeneralLeadsOrderData({
+    //         leadStatus: filters.leadStatus,
+    //         page: pageNumberClicked,
+    //         limit: pageSize,
+    //         department: filters.dept,
+    //         searchString: filters.searchString,
+    //         date: filters.date,
+    //         unit: filters.unit
+    //     }).then(res => {
+    //         setIsLoading(false);
+    //         setTableData(res?.data)
+    //         setTotalRecords(res?.totalRecords)
+    //         setCountRecords(res?.totalRecords)
+    //     }).catch(err => {
+    //         console.log(err)
+    //     });
+    // }
+    const getGeneralLeadsOrderDataFn = async () => {
+        try {
+            setIsLoading(true);
+
+            const response = await getGeneralLeadsOrderData({
+                leadStatus: filters.leadStatus,
+                page: pageNumberClicked,
+                limit: pageSize,
+                department: filters.dept,
+                searchString: filters.searchString,
+                date: filters.date,
+                unit: filters.unit,
+            });
+
+            setTableData(response?.data);
+            setTotalRecords(response?.totalRecords);
+            setCountRecords(response?.totalRecords);
+        } catch (error) {
+            console.error("Error fetching general leads data:", error);
+            handleApiError(error); // Optional: use your centralized error handler
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    //open direct closing lead modal
+    const handleCloseLead = (value: any) => {
+        setCloseLeadModal(true)
+        setRowDataCL(value)
+    }
+
+    //close lead on confirm
+    // const handleConfirmCloseLead = (rowDataCL: any,valueFollowups, 
+    //     followUpDate, valueTime, selectedCD, selectedL1, selectedL2, 
+    //     additionalComment) => {
+    //     generalLeadsCaptureResponse({
+    //         //comments: ' ',
+    //         patientId: rowDataCL?.patientId,
+    //         prescriptionId: rowDataCL?.prescriptionId,
+    //         followUpStatus: 'No',
+    //         callDisposition: selectedCD,
+    //         serviceDispositionL1: selectedL1,
+    //         serviceDispositionL2:selectedL2,
+    //         comments:additionalComment
+
+    //     }).then(res => {
+    //         if (res?.statusCode === 201) {
+    //             getGeneralLeadsOrderDataFn()
+    //             setCloseLeadModal(false)
+    //             setSuccessMsgModal(true)
+    //         }
+    //     })
+    // }
+
+    const handleConfirmCloseLead = async (rowDataCL: any) => {
+        try {
+            const res: any = await generalLeadsCaptureResponse({
+                patientId: rowDataCL?.patientId,
+                prescriptionId: rowDataCL?.prescriptionId,
+                followUpStatus: "No",
+                callDisposition: '',
+                serviceDispositionL1: '',
+                serviceDispositionL2: '',
+                comments: '',
+            });
+
+            if (res?.statusCode === 201) {
+                getGeneralLeadsOrderDataFn();
+                setCloseLeadModal(false);
+                setSuccessMsgModal(true);
+            }
+        } catch (error) {
+            handleApiError(error);
+        }
+    };
+
+
+
+    //open capturing response modal
+    const handleCaptureResponse = (value: any) => {
+        setCaptureResponseModal(true)
+        setRowDataCR(value)
+    }
+
+    // const handleSubmitCaptureResponse = (selectedReason, valueFollowups, followUpDate, valueTime, selectedCD, selectedL1, selectedL2, additionalComment) => {
+    //     generalLeadsCaptureResponse({
+    //         //comments: selectedReason,
+    //         comments: additionalComment,
+    //         patientId: rowDataCR?.patientId,
+    //         prescriptionId: rowDataCR?.prescriptionId,
+    //         followUpStatus: valueFollowups,
+    //         ...(followUpDate && { followUpDate: followUpDate }),
+    //         callDisposition: selectedCD,
+    //         serviceDispositionL1: selectedL1,
+    //         serviceDispositionL2: selectedL2,
+    //         timings: valueTime?.format('hh:mm A')
+
+    //     }).then(res => {
+    //         if (res?.statusCode === 201) {
+
+    //             getGeneralLeadsOrderDataFn()
+
+    //             setCaptureResponseFlag(true)
+    //             setSuccessMsgModal(true)
+    //         }
+    //         setOpenNextStepModal(false)
+    //     })
+    // }
+    const handleSubmitCaptureResponse = async (
+        selectedReason: any,
+        valueFollowups: any,
+        followUpDate: any,
+        valueTime: any,
+        selectedCD: any,
+        selectedL1: any,
+        selectedL2: any,
+        additionalComment: any,
+        dnd: boolean,
+        phoneNumber: string
+    ) => {
+        try {
+            const res: any = await generalLeadsCaptureResponse({
+                comments: additionalComment,
+                patientId: rowDataCR?.patientId,
+                prescriptionId: rowDataCR?.prescriptionId,
+                followUpStatus: valueFollowups,
+                ...(followUpDate && { followUpDate }),
+                callDisposition: selectedCD,
+                serviceDispositionL1: selectedL1,
+                serviceDispositionL2: selectedL2,
+                timings: valueTime?.format('hh:mm A'),
+                dnd,
+                phoneNumber,
+            });
+            console.log(dnd);
+            if (res.success) {
+                getGeneralLeadsOrderDataFn();
+                if (dnd === false) {
+                    setCaptureResponseFlag(true);
+                    setSuccessMsgModal(true);
+                    setOpenNextStepModal(false);
+                }
+            } else {
+                console.error("API Error:", res.message);
+                handleApiError(res.message);
+            }
+        } catch (error) {
+            handleApiError(error);
+        }
+    };
+
+
+    // Effect to fetch high value order when filters, page, or page size change
+    useEffect(() => {
+
+        // Function to fetch high value order data
+        const fetchData = () => {
+            getGeneralLeadsOrderDataFn()
+
+        };
+
+        // Fetch data on component mount and whenever dependencies change
+        fetchData();
+
+        // if(!pdfModalOpen){
+        // const intervalId = setInterval(fetchData, 5000);
+        // return () => clearInterval(intervalId);
+        // }
+        //}, [filters, pageNumberClicked, pageSize, pdfModalOpen]);
+    }, [filters, pageNumberClicked, pageSize]);
+
+
+    //unlocking order
+    const unlockingOrder = async (row: any) => {
+        try {
+            const res = await unlockCallCenterOrder({
+                "patientId": row?.patientId,
+                "prescriptionId": row?.prescriptionId,
+                "name": tab,
+            })
+        }
+        catch (error) {
+            handleApiError(error);
+        }
+    }
+
+    //closing capture response modal
+    const closingCaptureResponseModal = (row: any) => {
+        setCaptureResponseModal(false)
+        unlockingOrder(row)
+    }
+
+    //closing close lead modal
+    const closingCloseLeadModal = () => {
+        setCloseLeadModal(false)
+        unlockingOrder(rowDataCL)
+    }
+
+    //submit for dnd
+    const handleDND = async (row: any) => {
+        console.log('row ji', row)
+        try {
+            const res = await enableDND({
+                "phoneNumber": row?.phoneNumber,
+                "patientId": row?.patientId,
+                "dnd": true
+            })
+        }
+        catch (err) {
+            console.log(err)
+            handleApiError(err);
+        }
+    }
+
+    return (
+        <>
+            <Typography sx={{ color: '#034EA1' }}>Count: {countRecords}</Typography>
+            <Box
+                sx={{
+                    bgcolor: theme.palette.primary.light,
+                    display: "flex",
+                    height: "100%"
+                }}
+            >
+                {/* Page Container */}
+                <PageContainer>
+                    <Box
+                        sx={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            justifyContent: "flex-start",
+                            //marginTop: "1.75rem",
+                        }}
+                    >
+                        <React.Fragment>
+                            <GeneralLeadsOrderList
+                                tableData={tableData}
+                                isLoading={isLoading}
+                                pageNumberClicked={pageNumberClicked}
+                                setPageNumberClicked={(page: number) => setPageNumberClicked(page)}
+                                recordsToShow={pageSize}
+                                setRecordsToShow={(ps: number) => setPageSize(ps)}
+                                totalRecords={totalRecords}
+                                setTotalRecords={setTotalRecords}
+                                getConversionPendingData={''}
+                                handleCloseLead={handleCloseLead}
+                                handleCaptureResponse={handleCaptureResponse}
+                                tab={tab}
+                                handleViewPdf={(e: boolean | ((prevState: boolean) => boolean)) => setPdfModalOpen(e)}
+                            />
+                        </React.Fragment>
+
+
+                        {/* Close the lead */}
+                        {
+                            closeLeadModal && (
+                                <Box>
+                                    <Modal
+                                        open={closeLeadModal}
+                                        onClose={closingCloseLeadModal}
+                                        sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+                                    >
+                                        <Box sx={{ width: "25rem", height: "15rem", backgroundColor: theme.palette.primary.light, padding: "25px" }}
+                                        >
+                                            <Typography id="modal-modal-title" variant="h6" component="h2">
+                                                Close the lead
+                                            </Typography>
+                                            <Typography sx={{ padding: "1rem 0 4rem 0" }}>
+                                                Do you confirm to close the lead?
+                                            </Typography>
+                                            <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                                                <Button onClick={closingCloseLeadModal}>CANCEL</Button>
+                                                <Button
+                                                    onClick={() => handleConfirmCloseLead(rowDataCL)}
+                                                    variant="contained"
+                                                    style={{ borderRadius: "0px" }}
+                                                >
+                                                    YES, I CONFIRM
+                                                </Button>
+                                            </Box>
+
+                                        </Box>
+
+                                    </Modal>
+                                </Box>
+                            )
+                        }
+
+                        {/* Capture Response */}
+                        <DispositionFormCA open={captureResponseModal} onClose={() => closingCaptureResponseModal(rowDataCR)} handleSubmitCapture={handleSubmitCaptureResponse} rowData={rowDataCR}
+                        //  handleDND={() => handleDND(rowDataCR)} 
+                        />
+
+                        {/* succesffull action modal for msg */}
+                        {
+                            successMsgModal && (
+                                <Modal
+                                    open={successMsgModal}
+                                    onClose={() => setSuccessMsgModal(false)}
+                                    aria-labelledby="modal-modal-title"
+                                    aria-describedby="modal-modal-description"
+                                    sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+                                >
+                                    <Box sx={{ width: "25rem", height: "15rem", backgroundColor: theme.palette.primary.light, padding: "25px", display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column" }}>
+                                        <Image
+                                            src={tick}
+                                            height={40}
+                                            width={40}
+                                            style={{ objectFit: "cover", margin: "0.5rem" }}
+                                            alt="tick mark"
+                                        />
+                                        {captureResponseFlag ? <Typography sx={{ fontSize: "1rem", marginTop: "0.5rem" }}>
+                                            The response has been captured succesffully !!!
+                                        </Typography> : <Typography sx={{ fontSize: "1rem", marginTop: "0.5rem" }}>
+                                            The lead has been closed succesffully !!!
+                                        </Typography>}
+                                        <Box
+                                            sx={{
+                                                width: "100%",
+                                                display: "flex",
+                                                justifyContent: "center",
+                                                marginTop: "3.625rem",
+                                            }}
+                                        >
+                                            <Typography
+                                                onClick={() => setSuccessMsgModal(false)}
+                                                sx={{
+                                                    color: theme.palette.primary.main,
+                                                    cursor: "pointer",
+                                                    ":hover": {
+                                                        transform: "scale(1.1)",
+                                                    },
+                                                }}
+                                            >
+                                                OK
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                </Modal>
+                            )
+                        }
+
+                    </Box>
+                </PageContainer>
+            </Box>
+        </>
+    );
+};
+
+// Define a function named `getLayout` as a static method of the `Admin` component.
+HighValueOrder.getLayout = function getLayout(page: React.ReactElement) {
+    // This function takes a `page` parameter, which is a React element representing the content to be wrapped in a layout.
+    // Return a JSX expression that wraps the `page` content within a `Layout` component.
+    return <Layout>{page}</Layout>;
+};
+
+export function getServerSideProps(context: any) {
+    return protectedPageRoute(context, null, async () => {
+        return {
+            props: {},
+        };
+    });
+}
+
+export default HighValueOrder;
+
+
+//High order value component
+import Layout from "@/components/Layout";
+import protectedPageRoute from "@/helper/requireAuthentication";
+import theme from "@/theme";
+import {
+	Box, Button, Modal, Typography, Snackbar, Alert,
+	CircularProgress
+} from "@mui/material";
+import React, { useEffect } from "react";
+import PageContainer from "ui/common/containers/PageContainer";
+import { NextPageWithLayout } from "@/pages/_app";
+import HighValueOrderList from "./HighValueOrderList";
+import { createCampaign, enableDND, getHighOrderValue, hightOrderCaptureResponse, unlockCallCenterOrder } from "@/modules";
+import tick from "../../../../apps/panel/public/images/blueTick.png";
+import Image from "next/image";
+import DispositionFormCA from "./DispositionFormCA";
+import { handleApiError } from "@/utils/handleApiError";
+import { getCookie, setCookie } from "cookies-next";
+import AgentModal from "./AgentModal";
+
+
+const HighValueOrder: NextPageWithLayout = (props: any) => {
+	const { filters, tab } = props;
+	const [tableData, setTableData] = React.useState([]);
+	const [isLoading, setIsLoading] = React.useState<boolean>(false);
+	const [totalRecords, setTotalRecords] = React.useState<any>();
+	const [pageNumberClicked, setPageNumberClicked] = React.useState<any>(1);
+	const [pageSize, setPageSize] = React.useState<any>(10);
+	const [closeLeadModal, setCloseLeadModal] = React.useState(false)
+	const [rowDataCL, setRowDataCL] = React.useState([])
+	const [captureResponseModal, setCaptureResponseModal] = React.useState(false)
+	const [rowDataCR, setRowDataCR] = React.useState<any>([])
+	const [openNextStepModal, setOpenNextStepModal] = React.useState(false)
+	const [successMsgModal, setSuccessMsgModal] = React.useState(false)
+	const [captureResponseFlag, setCaptureResponseFlag] = React.useState(false)
+	const [countRecords, setCountRecords] = React.useState(0)
+	const [open, setOpen] = React.useState<boolean>(false);
+	const [alertDetails, setAlertDetails] = React.useState<any>({ message: "success", type: "success" });
+	const [itemSelected, setItemSelected] = React.useState<string[]>([]);
+	const [campaignLoader, setCampaignLoader] = React.useState<boolean>(false);
+	const [agentNumber, setAgentNumber] = React.useState<any>('');
+	const [agentModal, setAgentModal] = React.useState<boolean>(false);
+
+	const handleClose = (
+		event: React.SyntheticEvent | Event,
+		reason?: string
+	) => {
+		if (reason === "clickaway") {
+			return;
+		}
+
+		setOpen(false);
+	};
+
+	// before returning JSX
+	const tableDataWithKey = tableData.map((row: any) => ({
+		...row,
+		patientPrescriptionKey: `${row.patientId}_${row.prescriptionId}`, // 👈 new key
+	}));
+
+	const getHighOrderValueData = async () => {
+		setIsLoading(true);
+
+		try {
+			const response = await getHighOrderValue({
+				leadStatus: filters.leadStatus,
+				page: pageNumberClicked,
+				limit: pageSize,
+				department: filters.dept,
+				searchString: filters.searchString,
+				date: filters.date,
+				unit: filters.unit,
+			});
+
+			if (response.success) {
+				setTableData(response.data?.data || []);
+				setTotalRecords(response.data?.totalRecords || 0);
+				setCountRecords(response.data?.totalRecords || 0);
+			} else {
+				console.error("API Error:", response.message);
+				handleApiError(response.message);
+			}
+		} catch (error) {
+			console.error("Unexpected Error:", error);
+			handleApiError("Something went wrong while fetching data.");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const handleCloseLead = (value: any) => {
+		setCloseLeadModal(true)
+		setRowDataCL(value)
+	}
+
+	const handleConfirmCloseLead = async (rowDataCL: any) => {
+		try {
+			const res = await hightOrderCaptureResponse({
+				patientId: rowDataCL?.patientId,
+				prescriptionId: rowDataCL?.prescriptionId,
+				followUpStatus: "No"
+			});
+
+			if (res?.statusCode === 201) {
+				getHighOrderValueData();
+				setCloseLeadModal(false);
+				setSuccessMsgModal(true);
+			}
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
+
+	//open capturing response modal
+	const handleCaptureResponse = (value: any) => {
+		setCaptureResponseModal(true)
+		setRowDataCR(value)
+	}
+
+	const handleSubmitCaptureResponse = async (
+		selectedReason: any,
+		valueFollowups: any,
+		followUpDate: any,
+		valueTime: any,
+		selectedCD: any,
+		selectedL1: any,
+		selectedL2: any,
+		additionalComment: string,
+		dnd: boolean,
+		phoneNumber: string
+	) => {
+		try {
+			const res = await hightOrderCaptureResponse({
+				comments: additionalComment,
+				patientId: rowDataCR?.patientId,
+				prescriptionId: rowDataCR?.prescriptionId,
+				orderId: rowDataCR?.orderId,
+				followUpStatus: valueFollowups,
+				...(followUpDate && { followUpDate }),
+				callDisposition: selectedCD,
+				serviceDispositionL1: selectedL1,
+				serviceDispositionL2: selectedL2,
+				timings: valueTime?.format("hh:mm A"),
+				dnd,
+				phoneNumber,
+			});
+
+			if (res?.statusCode === 201) {
+				getHighOrderValueData();
+				setCaptureResponseFlag(true);
+				setSuccessMsgModal(true);
+			}
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setOpenNextStepModal(false);
+		}
+	};
+
+
+	// Effect to fetch high value order when filters, page, or page size change
+	useEffect(() => {
+		// Function to fetch high value order data
+		const fetchData = () => {
+			getHighOrderValueData();
+		};
+
+		// Initial call
+		fetchData();
+
+		// Set up interval to fetch data every 10 seconds
+		const intervalId = setInterval(fetchData, 10000); // 10000ms = 10s
+
+		// Cleanup function to clear interval on unmount or dependency change
+		return () => clearInterval(intervalId);
+
+	}, [filters, pageNumberClicked, pageSize]);
+
+	//unlocking order
+	const unlockingOrder = async (row: any) => {
+		try {
+			const res = await unlockCallCenterOrder({
+				"patientId": row?.patientId,
+				"prescriptionId": row?.prescriptionId,
+				"name": tab,
+			})
+		}
+		catch (error) {
+			handleApiError(error);
+		}
+	}
+
+	//closing capture response modal
+	const closingCaptureResponseModal = (row: any) => {
+		setCaptureResponseModal(false)
+		unlockingOrder(row)
+	}
+
+	//closing close lead modal
+	const closingCloseLeadModal = () => {
+		setCloseLeadModal(false)
+		unlockingOrder(rowDataCL)
+	}
+
+	//submit for dnd
+	const handleDND = async (row: any) => {
+		console.log('row ji', row)
+		try {
+			const res = await enableDND({
+				"phoneNumber": row?.phoneNumber,
+				"patientId": row?.patientId,
+				"dnd": true
+			})
+		}
+		catch (error) {
+			handleApiError(error);
+		}
+	}
+
+	const showAlert = (message: string, type: "success" | "error") => {
+		setOpen(true);
+		setAlertDetails({ message, type });
+	};
+
+	const handleCreateCampaign = async () => {
+		// const selectedLead = tableData.filter((item: any) => itemSelected.includes(item.patientId?.toString()));
+		const selectedLead = tableData.filter((item: any) =>
+			itemSelected.includes(`${item.patientId}_${item.prescriptionId}`)
+		);
+		if (selectedLead.length === 0) {
+			showAlert("Need to select at least one row", "error");
+			return;
+		}
+
+		try {
+			setCampaignLoader(true)
+			const body = {
+				numbersUnit: selectedLead,
+				type: "High Order Value",
+			};
+
+			const res = await createCampaign(body);
+
+			if (res.success) {
+				showAlert("Campaign created successfully", "success");
+				setCampaignLoader(false)
+				setItemSelected([])
+			} else {
+				showAlert(res.message || "Failed to create campaign", "error");
+				setCampaignLoader(false)
+				setItemSelected([])
+			}
+		} catch (error) {
+			console.error("Campaign creation error:", error);
+			showAlert("Unexpected error occurred", "error");
+			setCampaignLoader(false)
+			setItemSelected([]);
+		}
+	};
+
+	const handleAgentNumber = () => {
+		setCookie("agent_number", agentNumber);
+		setAgentModal(false);
+	}
+
+	React.useEffect(() => {
+		const _agentNumber = getCookie("agent_number")
+		if (_agentNumber) {
+			setAgentNumber(_agentNumber);
+		} else {
+			setAgentModal(true);
+		}
+	}, [agentNumber])
+
+
+	return (
+		<>
+			<Snackbar
+				open={open}
+				anchorOrigin={{ vertical: "top", horizontal: "right" }}
+				autoHideDuration={3000}
+				onClose={handleClose}
+			>
+				<Alert
+					onClose={handleClose}
+					severity={alertDetails.type}
+				>
+					{alertDetails.message}
+				</Alert>
+			</Snackbar>
+
+			<AgentModal agentModal={agentModal} setAgentModal={setAgentModal} setAgentNumber={setAgentNumber} handleAgentNumber={handleAgentNumber} />
+
+			<Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+				<Typography sx={{ color: '#034EA1' }}>Count: {countRecords}</Typography>
+				<Button
+					variant="contained"
+					onClick={handleCreateCampaign}
+					sx={{ width: "160px", textTransform: "none", borderRadius: "4px", boxShadow: "none", pt: 1 }}
+					disabled={campaignLoader}
+				>
+					{campaignLoader ? (
+						<CircularProgress size={20} color="inherit" />
+					) : (
+						"+ Create Campaign"
+					)}
+				</Button>
+			</Box>
+			<Box
+				sx={{
+					bgcolor: theme.palette.primary.light,
+					display: "flex",
+					height: "100%"
+				}}
+			>
+				{/* Page Container */}
+				<PageContainer>
+					<Box
+						sx={{
+							display: "flex",
+							alignItems: "flex-start",
+							justifyContent: "flex-start",
+							//marginTop: "1.75rem",
+						}}
+					>
+						<React.Fragment>
+							<HighValueOrderList
+								selected={itemSelected}
+								setItemSelected={setItemSelected}
+								// tableData={tableData}
+								tableData={tableDataWithKey}
+								isLoading={isLoading}
+								agentNumber={agentNumber}
+								pageNumberClicked={pageNumberClicked}
+								setPageNumberClicked={(page: number) => setPageNumberClicked(page)}
+								recordsToShow={pageSize}
+								setRecordsToShow={(ps: number) => setPageSize(ps)}
+								totalRecords={totalRecords}
+								setTotalRecords={setTotalRecords}
+								getConversionPendingData={''}
+								handleCloseLead={handleCloseLead}
+								handleCaptureResponse={handleCaptureResponse}
+								tab={tab}
+							/>
+						</React.Fragment>
+
+
+						{/* Close the lead */}
+						{
+							closeLeadModal && (
+								<Box>
+									<Modal
+										open={closeLeadModal}
+										onClose={closingCloseLeadModal}
+										sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+									>
+										<Box sx={{ width: "25rem", height: "15rem", backgroundColor: theme.palette.primary.light, padding: "25px" }}
+										>
+											<Typography id="modal-modal-title" variant="h6" component="h2">
+												Close the lead
+											</Typography>
+											<Typography sx={{ padding: "1rem 0 4rem 0" }}>
+												Do you confirm to close the lead?
+											</Typography>
+											<Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+												<Button onClick={closingCloseLeadModal}>CANCEL</Button>
+												<Button
+													onClick={() => handleConfirmCloseLead(rowDataCL)}
+													variant="contained"
+													style={{ borderRadius: "0px" }}
+												>
+													YES, I CONFIRM
+												</Button>
+											</Box>
+
+										</Box>
+
+									</Modal>
+								</Box>
+							)
+						}
+
+						{/* Capture Response */}
+						<DispositionFormCA open={captureResponseModal} onClose={() => closingCaptureResponseModal(rowDataCR)} handleSubmitCapture={handleSubmitCaptureResponse} rowData={rowDataCR} handleDND={() => handleDND(rowDataCR)} />
+
+						{/* succesffull action modal for msg */}
+						{
+							successMsgModal && (
+								<Modal
+									open={successMsgModal}
+									onClose={() => setSuccessMsgModal(false)}
+									aria-labelledby="modal-modal-title"
+									aria-describedby="modal-modal-description"
+									sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+								>
+									<Box sx={{ width: "25rem", height: "15rem", backgroundColor: theme.palette.primary.light, padding: "25px", display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column" }}>
+										<Image
+											src={tick}
+											height={40}
+											width={40}
+											style={{ objectFit: "cover", margin: "0.5rem" }}
+											alt="tick mark"
+										/>
+										{captureResponseFlag ? <Typography sx={{ fontSize: "1rem", marginTop: "0.5rem" }}>
+											The response has been captured succesffully !!!
+										</Typography> : <Typography sx={{ fontSize: "1rem", marginTop: "0.5rem" }}>
+											The lead has been closed succesffully !!!
+										</Typography>}
+										<Box
+											sx={{
+												width: "100%",
+												display: "flex",
+												justifyContent: "center",
+												marginTop: "3.625rem",
+											}}
+										>
+											<Typography
+												onClick={() => setSuccessMsgModal(false)}
+												sx={{
+													color: theme.palette.primary.main,
+													cursor: "pointer",
+													":hover": {
+														transform: "scale(1.1)",
+													},
+												}}
+											>
+												OK
+											</Typography>
+										</Box>
+									</Box>
+								</Modal>
+							)
+						}
+
+					</Box>
+				</PageContainer>
+			</Box>
+		</>
+	);
+};
+
+// Define a function named `getLayout` as a static method of the `Admin` component.
+HighValueOrder.getLayout = function getLayout(page: React.ReactElement) {
+	// This function takes a `page` parameter, which is a React element representing the content to be wrapped in a layout.
+	// Return a JSX expression that wraps the `page` content within a `Layout` component.
+	return <Layout>{page}</Layout>;
+};
+
+export function getServerSideProps(context: any) {
+	return protectedPageRoute(context, null, async () => {
+		return {
+			props: {},
+		};
+	});
+}
+
+export default HighValueOrder;
