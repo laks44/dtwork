@@ -1,29 +1,1597 @@
-"Conduct a detailed market research report on [Company Name]. Include the following:
-Company Overview: Brief history, mission, and vision.
-Geographic Presence: Global footprint with emphasis on operations in India.
-Year of Establishment and Headquarters Location.
-Employee Count: Total number of employees globally and regionally.
-Financials (Last Fiscal Year):
-Total Revenue
-Operating Income
-Net Income
-Earnings Per Share (EPS)
-Product Activity (Last Year):
-New products or services launched
-Innovations or updates
-Recent News & Events:
-Mergers, acquisitions, partnerships
-Major product launches or corporate events
-Product Catalogue:
-Product lines and categories
-Value propositions
-Key competitors
-Market positioning and challenges
-Leadership & Shareholders:
-CEO, CFO, COO, CTO, CMO, CXO
-Major institutional or individual shareholders
-Any Other Relevant Information:
-Strategic initiatives
-ESG efforts
-Legal or regulatory matters
-Ensure all data is current and sourced from credible references. Include citations wherever applicable."
+import CustomLabel from "@/components/CustomLabel";
+import Layout from "@/components/Layout";
+import CallerAgentList from "@/components/CallerAgentList";
+import protectedPageRoute from "@/helper/requireAuthentication";
+import {
+  Box,
+  Tab,
+  Tabs,
+  TabProps,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  TextField,
+  Stack,
+  Button,
+  Modal,
+  Typography,
+  Collapse,
+  Tooltip,
+  Menu,
+} from "@mui/material";
+
+import Image from "next/image";
+import React, { useEffect, useState } from "react";
+import { NextPageWithLayout } from "../_app";
+import { styled } from "@mui/system";
+import { captureResponsePaymentPending, closeLeadPaymentPending, enableDND, getConversionPendingCount, getGeneralLeadsOrderCount, getHighValueOrderCount, getPaymentPendingUsers, getRefillStatusCount, getUnitList, saveCallCenterData, unlockCallCenterOrder } from "@/modules";
+import theme from "@/theme";
+import PageContainer from "ui/common/containers/PageContainer";
+import { useRouter } from "next/router";
+import { getCookie } from "cookies-next";
+import Select, { SelectChangeEvent } from "@mui/material/Select";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import dayjs from "dayjs";
+import "dayjs/locale/en-gb";
+import tick from "../../../public/images/blueTick.png";
+import CallerAgentRefillReminder from "@/components/CallerAgentRefillReminder";
+import ConversionPending from "@/components/ConversionPending";
+import HighValueOrder from "@/components/HighValueOrder";
+import DispositionFormCA from "@/components/DispositionFormCA";
+import exportFromJSON from 'export-from-json';
+import GeneralLeadsOrder from "@/components/GeneralLeadsOrder";
+import { decryptToken } from "@/helper";
+import jwtDecode from "jwt-decode";
+import Reports from "@/components/Reports";
+import { handleApiError } from "@/utils/handleApiError";
+
+// Define a type for the props of the StyledTab component.
+interface StyledTabProps extends TabProps {
+  selected?: boolean;
+}
+
+// Define the CallerAgent functional component.
+const CallerAgent: NextPageWithLayout = () => {
+  // Define the StyledTab component using the styled function.
+  const StyledTab = styled(Tab, {
+    shouldForwardProp: (prop) => prop !== "selected",
+  })<StyledTabProps>(({ theme, selected }) => ({
+    // Custom styling for the StyledTab component.
+    // "&.Mui-selected": { backgroundColor: "rgba(3, 78, 161, 0.08)" },
+    "&.MuiTab-root:hover": {
+      backgroundColor: !selected && "rgba(0, 0, 0, 0.04)",
+    },
+    background: selected ? "rgba(3, 78, 161, 0.08)" : "transparent",
+    boxShadow: "0.0625rem 0.0625rem 0.0625rem rgba(0, 0, 0, 0.12)",
+    width: "14rem",
+    alignItems: "start",
+  }));
+
+  // Function that defines an expandable menu.
+  const ExpandableMenu = () => {
+    return (
+      <Box sx={{
+        "& .css-xq5j3s-MuiButtonBase-root-MuiTab-root": {
+          opacity: "1 !important"
+        }
+      }}>
+        {/* Content of the expandable menu. */}
+        <Tooltip title="Leads where the customer has set a date for refill" placement="right" arrow>
+          <StyledTab selected={["REFILL_REMINDERS", "REJECTED", "NO_RESPONSE"].includes(selectedTabMenu)} label={<CustomLabel isExpandable isExpanded={expandMenu} label={"REFILL_REMINDERS"} value={tabs[1].value} />} value={"REFILL_REMINDERS"} onClick={(e) => onTabMenuClick("REFILL_REMINDERS")} />
+        </Tooltip>
+
+        <Collapse in={expandMenu}>
+          <Tooltip title="Leads where the customer has rejected the refill" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["REJECTED"].includes(selectedTabMenu)} label={<CustomLabel label={"REJECTED"} value={tabs[2].value} isSubMenu />} value={"REJECTED"} onClick={(e) => onTabMenuClick("REJECTED")} />
+            </Box>
+          </Tooltip>
+
+          <Tooltip title="Leads where the customer has not responded/taken action for the refill" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["NO_RESPONSE"].includes(selectedTabMenu)} label={<CustomLabel label={"NO_RESPONSE"} value={tabs[3].value} isSubMenu />} value={"NO_RESPONSE"} onClick={(e) => onTabMenuClick("NO_RESPONSE")} />
+            </Box>
+          </Tooltip>
+
+        </Collapse>
+      </Box>
+    )
+  }
+
+  const HighValueExpandableMenu = () => {
+    return (
+      <Box sx={{
+        "& .css-xq5j3s-MuiButtonBase-root-MuiTab-root": {
+          opacity: "1 !important"
+        }
+      }}>
+        <Tooltip title="Leads which fall under high-value Specialties" placement="right" arrow>
+          <StyledTab selected={["HIGH_VALUE_ORDER", "KNOWLARITY"].includes(selectedTabMenu)} label={<CustomLabel isExpandable isExpanded={highValueExpandMenu} label={"HIGH_VALUE_ORDER"} value={highOrderValueTabCount} />} value={"HIGH_VALUE_ORDER"} onClick={(e) => handleHighValueMenu("HIGH_VALUE_ORDER")} />
+        </Tooltip>
+
+        <Collapse in={highValueExpandMenu}>
+          <Tooltip title="Knowlarity" placement="right" arrow>
+            <StyledTab selected={["KNOWLARITY"].includes(selectedTabMenu)} label={<CustomLabel label={"KNOWLARITY"} value={""} isSubMenu />} value={"KNOWLARITY"} onClick={(e) => handleHighValueMenu("KNOWLARITY")} />
+          </Tooltip>
+        </Collapse>
+      </Box>
+    )
+  }
+
+
+  // An array of tabs for the CallerAgent component.
+  const callerAgentTabs: any[] = [
+    { key: 'PAYMENTS_PENDING', value: 0, option: "" },
+    { key: 'REFILL_REMINDERS', value: 0, option: "ALL", expandable: true },
+    { key: 'REJECTED', value: 0, option: "rejected" },
+    { key: 'NO_RESPONSE', value: 0, option: "noResponse" },
+    { key: 'CONVERSION_PENDING', value: 0, option: "" },
+    { key: 'HIGH_VALUE_ORDER', value: 0, option: "ALL", expandable: true },
+    { key: 'KNOWLARITY', value: 0, option: "knowlarity" },
+    { key: 'GENERAL_LEADS', value: 0, option: "" },
+    { key: 'REPORTS', value: '', option: "" }
+  ]
+
+  // Define local state variables using the `useState` hook.
+  const [tabs, setTabs] = useState<any[]>(callerAgentTabs);
+  const [expandMenu, setExpandMenu] = useState<boolean>(false);
+  const [highValueExpandMenu, setHighValueExpandMenu] = useState<boolean>(false);
+  const [query, setQuery] = useState<any>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [totalRecords, setTotalRecords] = useState<any>();
+  const [pageNumberClicked, setPageNumberClicked] = useState<any>(1);
+  const [recordsToShow, setRecordsToShow] = useState<any>(10);
+  const [leadStatus, setLeadStatus] = useState<any>("ALL");
+  const [dateValue, setDateValue] = useState<any>(null);
+  const [modifiedDate, setModifiedDate] = useState<string>("");
+  const [open, setOpen] = useState<boolean>(false);
+  const [selectedTabMenu, setSelectedTabMenu] = useState<any>('PAYMENTS_PENDING');
+  const [valueCapture, setValueCapture] = useState<any>('yes');
+  const [responseText, setResponseText] = useState<any>('')
+  const [rowData, setRowData] = useState<any>([])
+  const [valueFollowups, setValueFollowups] = useState<any>('require more follow ups')
+  const [openLead, setOpenLead] = useState<boolean>(false)
+  const [rowDataLead, setRowDataLead] = useState<any>([])
+  const [openChildCloseLead, setOpenChildCloseLead] = useState<boolean>(false)
+  const [conversionTabCount, setConversionTabCount] = React.useState('')
+  const [highOrderValueTabCount, setHighOrderValueCountData] = React.useState('')
+  const [generalLeadsOrderValueTabCount, setGeneralLeadsValueTabCount] = React.useState('')
+  const [dept, setDept] = useState<any>("ALL");
+  const [orderDirection, setOrderDirection] = React.useState<any>('')
+  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+  const openSortingMenu = Boolean(anchorEl);
+  const [render, setRender] = useState<boolean>(false)
+  const [openSDModal, setOpenSDModal] = React.useState<any>(false)
+  const [saveDataFrom, setSaveDataFrom] = React.useState<any>(null)
+  const [saveDataTo, setSaveDataTo] = React.useState<any>(null)
+  const [jsonDataToSave, setJsonDataToSave] = React.useState<any>([])
+  const [unit, setUnit] = React.useState<any>("ALL")
+  const [unitData, setUnitData] = React.useState<any>([])
+  const [pdfModalOpen, setPdfModalOpen] = React.useState<any>(false)
+  const [countRecords, setCountRecords] = React.useState<any>(0)
+  const [isCallCenterAdmin, setIsCallCenterAdmin] = React.useState<any>(false)
+  const [campaignFilter, setCampaignFilter] = React.useState<any>("ALL")
+
+  const handleClickSortingMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  // Function to handle changes in lead status.
+  const handleLeadStatusChange = (event: SelectChangeEvent) => {
+    let val = event.target.value;
+    updateFilter("leadStatus", val)
+    setLeadStatus(val);
+  };
+
+  // Default filter configuration.
+  const defaultFilter = { searchString: "", date: "", leadStatus: "ALL", refillStatus: "ALL", dept: "ALL", unit: 'ALL' };
+  const [filters, setFilters] = useState<any>(defaultFilter);
+
+  // Function to fetch refill status counts.
+  const getRefillStatus = async () => {
+    try {
+      const response = await getRefillStatusCount();
+      callerAgentTabs.map((ca: any) => {
+        switch (ca.key) {
+          case 'REFILL_REMINDERS':
+            ca.value = response?.totalRefillCount;
+            break;
+          case 'REJECTED':
+            ca.value = response?.rejectedCount;
+            break;
+          case 'NO_RESPONSE':
+            ca.value = response?.noResponseCount;
+            break;
+        }
+      })
+      setTabs(callerAgentTabs)
+    } catch (error) {
+      console.error(error)
+      console.log(error)
+      handleApiError(error);
+    }
+
+  }
+
+  // Function to fetch conversion pending counts.
+  const getConversionPendingDataCount = async () => {
+    try {
+      const res = await getConversionPendingCount()
+      setConversionTabCount(res[0].count)
+    } catch (err) {
+      console.log(err)
+      handleApiError(err);
+    }
+  }
+
+  //Function to get High order value count
+  const getHighValueOrderCountData = async () => {
+    try {
+      const res = await getHighValueOrderCount()
+      setHighOrderValueCountData(res.data.totalCount.count)
+    } catch (err) {
+      console.log(err)
+      handleApiError(err);
+    }
+  }
+
+  //Function to get GENERAL LEADS order value count
+  const getGeneralLeadsOrderCountData = async () => {
+    try {
+      const res = await getGeneralLeadsOrderCount()
+      setGeneralLeadsValueTabCount(res?.data?.totalCount?.count)
+    } catch (err) {
+      console.log(err)
+      handleApiError(err);
+    }
+  }
+
+
+  const handleHighValueMenu = (id: any) => {
+    if (id == "HIGH_VALUE_ORDER") {
+      setHighValueExpandMenu(!highValueExpandMenu);
+    }
+    let temp = tabs.filter((a: any) => a.key == id)[0];
+    setSelectedTabMenu(id);
+
+    //below is for reseting all filters on tab change
+    id !== 'KNOWLARITY' && setFilters(defaultFilter)
+    setQuery('')
+    setUnit('ALL')
+    setLeadStatus('ALL')
+    setModifiedDate('')
+    setOrderDirection('')
+    setDateValue(null)
+
+  }
+
+  // Function to filter select data based on the search string and date.
+  const filterSelect = (data: any[]) => {
+    if (dayjs(modifiedDate, "DD/MM/YYYY", true).isValid()) {
+      if (leadStatus === "All") {
+        return data.filter(
+          (item) =>
+            item.OrderApprovedDate.toLowerCase().includes(modifiedDate) &&
+            (item.LeadStatus.includes("Open") ||
+              item.LeadStatus.includes("Closed"))
+        );
+      }
+      if (leadStatus !== "All") {
+        return data.filter((item: any) => {
+          return (
+            item.OrderApprovedDate.toLowerCase().includes(modifiedDate) &&
+            item.LeadStatus.includes(leadStatus)
+          );
+        });
+      }
+    }
+    if (leadStatus !== "All") {
+      return data.filter((item: any) => {
+        return (
+          item.LeadStatus.includes(leadStatus)
+        );
+      });
+    }
+
+    return data;
+
+  };
+
+  //  Function to handle tab changes.
+  const handleChange = (e: React.SyntheticEvent, newVal: number) => {
+    let temp = tabs.filter((a: any) => a.key == newVal)[0];
+    setSelectedTabMenu(newVal)
+    updateFilter("refillStatus", temp?.option);
+
+  };
+
+  // Function to handle tab menu clicks.
+  const onTabMenuClick = (id: any) => {
+    if (id == "REFILL_REMINDERS") {
+      setExpandMenu(!expandMenu);
+    }
+    let temp = tabs.filter((a: any) => a.key == id)[0];
+    setSelectedTabMenu(id);
+    updateFilter("refillStatus", temp.option);
+
+    //below is for reseting all filters on tab change
+    (id !== 'REJECTED' && id !== 'NO_RESPONSE') && setFilters(defaultFilter)
+    setQuery('')
+    setUnit('ALL')
+    setLeadStatus('ALL')
+    setModifiedDate('')
+    setOrderDirection('')
+    setDateValue(null)
+
+  }
+
+  // Function to handle date changes.
+  const handleDateChange = (newValue: any) => {
+    setDateValue(newValue?.$d);
+    let modDate = dayjs(newValue?.$d).format("DD/MM/YYYY")
+    updateFilter('date', modDate)
+    setModifiedDate(dayjs(newValue?.$d).format("MM/DD/YYYY"));
+  };
+
+  // Function to clear the date filter.
+  const handleClear = () => {
+    setModifiedDate('')
+    updateFilter('date', "")
+    setDateValue(null)
+  };
+
+  // Function to handle opening the modal for capturing responses.
+  const handleOpen = (value: any) => {
+    setOpen(true);
+    setRowData(value)
+  }
+
+  // Function to handle opening the modal for closing the lead.
+  const handleOpenLead = (value: any) => {
+    setOpenLead(true)
+    setRowDataLead(value)
+  }
+
+  // Function to handle the change in response capture status.
+  const handleCaptureChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setValueCapture((event.target as HTMLInputElement).value);
+
+  };
+
+  // Function to handle the change in follow-up status.
+  const handleFollowupsChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setValueFollowups((event.target as HTMLInputElement).value);
+  };
+
+  // Function to handle the click on cancel.
+  const handleCancelClick = () => {
+    setResponseText('')
+    setOpen(false)
+  }
+
+  // Function to handle closing the lead.
+  const handleCloseLead = async (data: any) => {
+    let res;
+    if (valueFollowups === "close the lead") {
+      res = await captureResponsePaymentPending(data)
+      setValueFollowups('')
+    } else {
+      res = await closeLeadPaymentPending(data)
+    }
+    setRowDataLead({ ...res, leadStatus: "CLOSED" })
+    setOpenLead(false)
+    setOpenChildCloseLead(true)
+    setRender(!render)
+  }
+
+
+  // Function to update filter options.
+  const updateFilter = (type: any, value: any) => {
+    let updatedFilter = { ...filters, [type]: value };
+    setFilters(updatedFilter);
+
+  }
+
+  //function to sort payment pending data 
+  const handleDirLtoH = () => {
+    setOrderDirection('ASC')
+  }
+
+  const handleDirHtoL = () => {
+    setOrderDirection('DESC')
+  }
+
+  //Change Dept filter in high order value
+  const handleDeptChange = (event: any) => {
+    setDept(event.target.value)
+    updateFilter('dept', event.target.value)
+  }
+
+  //open modal for save data
+  const handleSaveData = () => {
+    setOpenSDModal(true)
+  }
+
+  //handle start date and end date for download
+  const handleFromDate = (newValue: any) => {
+    setSaveDataFrom(dayjs(newValue?.$d).format("YYYY-MM-DD"))
+  }
+
+  const handleToDate = (newValue: any) => {
+    setSaveDataTo(dayjs(newValue?.$d).format("YYYY-MM-DD"))
+  }
+
+  //JSON data fro selected tab
+  const getJsonDataToSave = async () => {
+    const res = await saveCallCenterData({
+      "startDate": saveDataFrom,
+      "endDate": saveDataTo,
+      "name": selectedTabMenu
+    })
+    setJsonDataToSave(res?.data)
+    exportToCSV(res?.data)
+  }
+
+  //function to call on confirm date for saving data
+  const handleConfirmToSaveData = () => {
+    getJsonDataToSave()
+    setOpenSDModal(false)
+    setSaveDataFrom('')
+    setSaveDataTo('')
+  }
+
+  //save data in csv format
+  const exportToCSV = (json: any) => {
+    exportFromJSON({ data: json, fileName: `${selectedTabMenu}_REPORT_${saveDataFrom}_TO_${saveDataTo}`, exportType: 'csv' });
+  };
+
+  //unlocking order
+  const unlockingOrder = async (row: any) => {
+    const res = await unlockCallCenterOrder({
+      "patientId": row?.patientId,
+      "prescriptionId": row?.orderId,//api has prescription id replaced with order id
+      "name": "PAYMENTS_PENDING",
+    })
+  }
+
+  //submit for dnd
+  const handleDND = async (row: any) => {
+    const res = await enableDND({
+      "phoneNumber": row?.phoneNumber,
+      "patientId": row?.patientId,
+      "dnd": true
+    })
+  }
+
+  //closing capture response modal
+  const closingCaptureResponseModal = (row: any) => {
+    setOpen(false)
+    unlockingOrder(row)
+  }
+
+  //closing close lead modal
+  const closingCloseLeadModal = () => {
+    setOpenLead(false)
+    unlockingOrder(rowData)
+  }
+
+  //getting Units Data
+  const getUnitsData = async () => {
+    try {
+      const resUnits = await getUnitList();
+      setUnitData(resUnits?.data);
+    } catch (err) {
+      console.log(`Get Units ===> ${err}`);
+    }
+  };
+
+  const handleSubmitCapture = async (
+    selectedReason: any,
+    valueFollowups: any,
+    followUpDate: any,
+    valueTime: any,
+    selectedCD: any,
+    selectedL1: any,
+    selectedL2: any,
+    additionalComment: string,
+    dnd: boolean,
+    mobileNo: string
+  ) => {
+    try {
+      const res = await captureResponsePaymentPending({
+        orderId: rowData?.orderId,
+        answerCall: true,
+        requireMore: rowData?.followUps > 1 ? valueFollowups === "Yes" : false,
+        response: selectedReason,
+        followUpDate,
+        callDisposition: selectedCD,
+        serviceDispositionL1: selectedL1,
+        serviceDispositionL2: selectedL2,
+        timings: valueTime?.format("hh:mm A"),
+        comments: additionalComment,
+        dnd,
+        mobileNo,
+      });
+
+      if (res?.statusCode === 201 || res?.message === "success") {
+        setRender(!render);
+        // getPaymentPendingUsersData(
+        //   pageNumberClicked,
+        //   recordsToShow,
+        //   query,
+        //   leadStatus,
+        //   modifiedDate,
+        //   unit
+        // );
+      }
+    } catch (error) {
+      handleApiError(error);
+    }
+  };
+
+  //function called on unit change
+  const handleChangeUnit = (event: any) => {
+    setUnit(event.target.value)
+    updateFilter("unit", event.target.value)
+  }
+
+  const handleCountRecords = (count: any) => {
+    callerAgentTabs.forEach((ca: any) => {
+      switch (ca.key) {
+        case 'PAYMENTS_PENDING':
+          ca.value = count;
+          break;
+      }
+    });
+    setCountRecords(count)
+  }
+
+  useEffect(() => {
+    getRefillStatus();
+    getConversionPendingDataCount()
+    getHighValueOrderCountData()
+    getGeneralLeadsOrderCountData()
+    getUnitsData()
+  }, []);
+
+  //check for call center admin
+  useEffect(() => {
+    const token: any = getCookie("accessToken");
+    const temp = decryptToken(token);
+    const decoded: any = jwtDecode(temp);
+    const { roles } = decoded;
+    if (roles?.includes("call_center_admin")) {
+      setIsCallCenterAdmin(true)
+    }
+  }, []);
+
+  return (
+    <Box
+      sx={{
+        bgcolor: theme.palette.primary.light,
+        display: "flex",
+        height: "100%",
+        flexDirection: "row",
+      }}>
+      <Box
+        sx={{
+          width: "13rem",
+          borderRight: `1px solid ${theme.palette.grey[600]}`,
+          display: "flex",
+          flexFlow: "column nowrap",
+        }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: "1rem 1.5rem",
+          }}>
+          <Box
+            sx={{
+              position: "relative",
+              width: "11rem",
+              height: "2.5rem",
+            }}>
+            <Image
+              src="images/manipal-hospitals-logo.svg"
+              fill
+              object-fit='contain'
+              alt="notif"
+            />
+          </Box>
+        </Box>
+        <Tabs
+          orientation="vertical"
+          variant="scrollable"
+          value={selectedTabMenu}
+          onChange={handleChange}
+          aria-label="Order Filters"
+          sx={{
+            borderRight: 0,
+            borderTop: 1,
+            borderBottom: 1,
+            borderColor: "divider",
+            alignItems: "start",
+            height: "100vh",
+            "& .MuiButtonBase-root": { opacity: "1" },
+          }}
+          TabIndicatorProps={{
+            style: { backgroundColor: theme.palette.primary.main },
+          }}>
+          <Tooltip title="Leads that have received the payment link but have not made the purchase" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["PAYMENTS_PENDING"].includes(selectedTabMenu)} label={<CustomLabel label={"PAYMENTS_PENDING"} value={tabs[0].value} />} value={"PAYMENTS_PENDING"} onClick={(e) => onTabMenuClick("PAYMENTS_PENDING")} />
+            </Box>
+          </Tooltip>
+          <ExpandableMenu />
+
+          <Tooltip title="Leads that have authenticated but have not taken any action" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["CONVERSION_PENDING"].includes(selectedTabMenu)} label={<CustomLabel label={"CONVERSION_PENDING"} value={conversionTabCount} />} value={"CONVERSION_PENDING"} onClick={(e) => onTabMenuClick("CONVERSION_PENDING")} />
+            </Box>
+          </Tooltip>
+
+          <HighValueExpandableMenu />
+
+          <Tooltip title="Leads which fall under general Specialties" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["GENERAL_LEADS"].includes(selectedTabMenu)} label={<CustomLabel label={"GENERAL_LEADS"} value={generalLeadsOrderValueTabCount} />} value={"GENERAL_LEADS"} onClick={(e) => onTabMenuClick("GENERAL_LEADS")} />
+            </Box>
+          </Tooltip>
+
+          {isCallCenterAdmin && <Tooltip title="Reports" placement="right" arrow>
+            <Box>
+              <StyledTab selected={["REPORTS"].includes(selectedTabMenu)} label={<CustomLabel label={"REPORTS"} value={''} />} value={"REPORTS"} onClick={(e) => onTabMenuClick("REPORTS")} />
+            </Box>
+          </Tooltip>}
+        </Tabs>
+      </Box>
+      <PageContainer>
+        {
+          (selectedTabMenu === 'REPORTS' && isCallCenterAdmin) ? <Box>
+            <Reports isCallCenterAdmin={isCallCenterAdmin} />
+          </Box>
+            :
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "flex-start",
+                flexDirection: "column",
+                padding: "1rem 1.5rem",
+              }}
+            >
+              <Box
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <TextField
+                  variant="outlined"
+                  sx={{ width: "15.5rem", marginRight: "0.688rem", }}
+                  key="search-bar"
+                  value={query}
+                  placeholder="Search by patient name/patient id"
+                  onChange={(e: any) => {
+                    let value = e.target.value
+                    const allowedValue = value.replace(/[^\w\s]/gi, '');
+                    updateFilter('searchString', value)
+                    //setQuery(value)
+                    setQuery(allowedValue)
+                  }}
+                  size="small"
+                />
+
+                {isCallCenterAdmin &&
+                  <Button variant="contained" onClick={handleSaveData} sx={{ textTransform: "none", borderRadius: "0" }}>Download CSV/Excel</Button>
+                }
+
+                <Box
+                  style={{ display: "flex", flexDirection: "row", gap: "10px", margin: "1rem 0rem  1rem 0rem", }}
+                >
+                  {(selectedTabMenu === "HIGH_VALUE_ORDER" || selectedTabMenu === "KNOWLARITY") &&
+                    <FormControl size="small">
+                      <InputLabel id="demo-simple-select-label">Dept</InputLabel>
+                      <Select
+                        value={dept}
+                        label="Select Dept"
+                        onChange={handleDeptChange}
+                        style={{ width: "5rem", }}
+                        MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                      >
+                        <MenuItem value={"ALL"}>All</MenuItem>
+                        <MenuItem value={"ONCOLOGY"}>ONCOLOGY</MenuItem>
+                        <MenuItem value={"CARDIOLOGY"}>CARDIOLOGY</MenuItem>
+                        <MenuItem value={"UROLOGY"}>UROLOGY</MenuItem>
+                        <MenuItem value={"INTERNAL MEDICINE"}>INTERNAL MEDICINE</MenuItem>
+                        <MenuItem value={"ORTHOPEDICS"}>ORTHOPEDICS</MenuItem>
+                        <MenuItem value={"DIABETES AND ENDOCRINOLOGY"}>DIABETES AND ENDOCRINOLOGY</MenuItem>
+                        <MenuItem value={"NEPHROLOGY"}>NEPHROLOGY</MenuItem>
+                        <MenuItem value={"NEUROLOGY"}>NEUROLOGY</MenuItem>
+                        <MenuItem value={"PULMONOLOGY & RESPIRATORY"}>PULMONOLOGY & RESPIRATORY</MenuItem>
+                        <MenuItem value={"RHEUMATOLOGY"}>RHEUMATOLOGY</MenuItem>
+                        <MenuItem value={"OBS & GYNAEC"}>OBS & GYNAEC</MenuItem>
+                        <MenuItem value={"DERMATOLOGY"}>DERMATOLOGY</MenuItem>
+                        <MenuItem value={"RHEUMATOLOGY- JOINT PAIN"}>RHEUMATOLOGY- JOINT PAIN</MenuItem>
+                        <MenuItem value={"ENDOCRINOLOGY"}>ENDOCRINOLOGY</MenuItem>
+                        <MenuItem value={"OBG (GYNAECOLOGY)"}>OBG (GYNAECOLOGY)</MenuItem>
+                        <MenuItem value={"PULMONOLOGY"}>PULMONOLOGY</MenuItem>
+                        <MenuItem value={"GASTROENTEROLOGY"}>GASTROENTEROLOGY</MenuItem>
+                      </Select>
+                    </FormControl>}
+
+                  {/* UNIT BASED FILTER */}
+                  <FormControl size="small">
+                    <InputLabel id="demo-simple-select-label">Unit</InputLabel>
+                    <Select
+                      value={unit}
+                      label="Unit"
+                      onChange={handleChangeUnit}
+                      style={{ width: "5.5rem", }}
+                      renderValue={(selected) => {
+                        if (!selected || selected === "ALL") return "All";
+                        const selectedUnit = unitData.find((item: any) => item.value === selected);
+                        return selectedUnit ? selectedUnit.key : selected;
+                      }}
+                      MenuProps={{
+                        PaperProps: {
+                          sx: {
+                            maxHeight: 300,
+                            overflowY: "auto",
+                            '&::-webkit-scrollbar': {
+                              width: '8px',
+                            },
+                            '&::-webkit-scrollbar-track': {
+                              backgroundColor: '#f1f1f1',
+                              borderRadius: '10px',
+                            },
+                            '&::-webkit-scrollbar-thumb': {
+                              backgroundColor: '#90caf9',
+                              borderRadius: '10px',
+                            },
+                            '&::-webkit-scrollbar-thumb:hover': {
+                              backgroundColor: '#42a5f5',
+                            },
+                          },
+                        },
+                      }}
+                    >
+                      <MenuItem value={"ALL"}>All</MenuItem>
+                      {unitData.length > 0 &&
+                        unitData?.map(
+                          (item: any) => (
+                            <MenuItem
+                              // sx={{ textTransform: "capitalize" }}
+                              value={item?.key}
+                              key={item?.id}
+                            >
+                              {item?.value}
+                            </MenuItem>
+                          )
+
+                        )}
+
+                    </Select>
+                  </FormControl>
+
+                  {selectedTabMenu !== "KNOWLARITY" && <FormControl size="small">
+                    <InputLabel id="demo-simple-select-label">Lead Status</InputLabel>
+                    <Select
+                      value={leadStatus}
+                      label="Lead Status"
+                      onChange={handleLeadStatusChange}
+                      style={{ width: "8rem", }}
+                    >
+                      <MenuItem value={"ALL"}>All</MenuItem>
+                      <MenuItem value={"OPEN"}>Open</MenuItem>
+                      <MenuItem value={"CLOSED"}>Closed</MenuItem>
+                      <MenuItem value={"CONVERTED"}>Converted</MenuItem>
+                      {selectedTabMenu !== "CONVERSION_PENDING" && <MenuItem value={"FOLLOW UP"}>Follow Up</MenuItem>}
+                    </Select>
+                  </FormControl>}
+                  {selectedTabMenu !== "KNOWLARITY" && <Box
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 170
+                    }}>
+                    <LocalizationProvider dateAdapter={AdapterDayjs}>
+                      <DatePicker
+                        label="Select Date"
+                        defaultValue={null}
+                        value={dateValue}
+                        disableHighlightToday
+                        format="DD/MM/YYYY"
+                        onChange={(newValue) => handleDateChange(newValue)}
+                        slotProps={{
+                          actionBar: { actions: ['clear', 'cancel'], onClear: () => handleClear() },
+                          textField: { size: 'small' }
+                        }}
+                      />
+
+                    </LocalizationProvider>
+                  </Box>}
+
+                  {selectedTabMenu === "KNOWLARITY" && <FormControl size="small">
+                    <InputLabel id="demo-simple-select-label">Campaign</InputLabel>
+                    <Select
+                      value={campaignFilter}
+                      label="Lead Status"
+                      onChange={(e) => {
+                        setCampaignFilter(e.target.value);
+                        updateFilter("campaign", e.target.value)
+                      }}
+                      style={{ width: "8rem", }}
+                    >
+                      <MenuItem value={"ALL"}>All</MenuItem>
+                      <MenuItem value={"ACL"}>Already Campaigned Leads</MenuItem>
+                      <MenuItem value={"NL"}>New Leads</MenuItem>
+                    </Select>
+                  </FormControl>}
+
+                  {selectedTabMenu === 'PAYMENTS_PENDING' && <Box>
+                    <Button
+                      onClick={handleClickSortingMenu}
+                      variant="contained"
+                      endIcon={<i className="ri-arrow-up-down-fill"></i>}
+                      size="small"
+                      sx={{ borderRadius: '0' }}
+                    >
+                      Sort
+                    </Button>
+                    <Menu
+                      id="basic-menu"
+                      anchorEl={anchorEl}
+                      open={openSortingMenu}
+                      onClose={() => setAnchorEl(null)}
+                      MenuListProps={{
+                        'aria-labelledby': 'basic-button',
+                      }}
+                    >
+                      <MenuItem onClick={() => setOrderDirection('')}>Default Order Value</MenuItem>
+                      <MenuItem onClick={handleDirLtoH}>Order Value: Low to High</MenuItem>
+                      <MenuItem onClick={handleDirHtoL}>Order Value: High to Low</MenuItem>
+                    </Menu>
+                  </Box>}
+
+                </Box>
+              </Box>
+
+              <Box>
+                {['PAYMENTS_PENDING'].includes(selectedTabMenu) &&
+                  <CallerAgentList
+                    query={query}
+                    leadStatus={leadStatus}
+                    modifiedDate={modifiedDate}
+                    unit={unit}
+                    render={render}
+                    orderDirection={orderDirection}
+                    handleCapture={handleOpen}
+                    handleCloseLead={handleOpenLead}
+                    tab={selectedTabMenu}
+                    countRecords={countRecords}
+                    setCountRecords={handleCountRecords}
+                  />
+                }
+
+                {['REFILL_REMINDERS', 'REJECTED', 'NO_RESPONSE'].includes(selectedTabMenu) &&
+                  <CallerAgentRefillReminder filters={filters} tab={'REFILL_REMINDERS'} leadStatusRefillRem={leadStatus} />}
+
+                {['CONVERSION_PENDING'].includes(selectedTabMenu) &&
+                  <ConversionPending filters={filters} tab={selectedTabMenu} />}
+
+                {['HIGH_VALUE_ORDER', 'KNOWLARITY'].includes(selectedTabMenu) &&
+                  <HighValueOrder filters={filters} tab={selectedTabMenu} />}
+
+                {['GENERAL_LEADS'].includes(selectedTabMenu) &&
+                  <GeneralLeadsOrder filters={filters} tab={selectedTabMenu} />}
+
+                <DispositionFormCA open={open}
+                  //onClose={() => setOpen(false)}
+                  onClose={() => closingCaptureResponseModal(rowData)}
+                  handleSubmitCapture={handleSubmitCapture}
+                  rowData={rowData}
+                  handleDND={() => handleDND(rowData)}
+                />
+
+
+                <Box>
+                  <Modal
+                    open={openLead}
+                    onClose={closingCloseLeadModal}
+                    sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+                  >
+                    <Box sx={{ width: "37.125rem", height: "15.125rem", backgroundColor: theme.palette.primary.light, padding: "25px" }}
+                    >
+                      <Typography id="modal-modal-title" variant="h6" component="h2">
+                        Close the lead
+                      </Typography>
+                      <Typography sx={{ paddingTop: "20px" }}>
+                        Do you confirm to close the lead?
+                      </Typography>
+                      <Box sx={{ display: "flex", position: "relative", top: "40%", left: "60%" }}>
+                        <Button onClick={closingCloseLeadModal}>CANCEL</Button>
+                        <Button
+                          onClick={() => handleCloseLead(rowDataLead)}
+                          variant="contained"
+                          style={{ borderRadius: "0px", margin: "10px" }}
+                        >
+                          YES, I CONFIRM
+                        </Button>
+                      </Box>
+
+                    </Box>
+
+                  </Modal>
+                </Box>
+
+                <React.Fragment>
+                  <Modal
+                    open={openChildCloseLead}
+                    onClose={() => setOpenChildCloseLead(false)}
+                    aria-labelledby="child-modal-title"
+                    aria-describedby="child-modal-description"
+                    sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+                  >
+                    <Box sx={{ width: "37.125rem", height: "15.125rem", backgroundColor: theme.palette.primary.light, padding: "25px", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
+                      <Image
+                        src={tick}
+                        height={40}
+                        width={40}
+                        style={{ objectFit: "cover" }}
+                        alt="tick mark"
+                      />
+                      <p id="child-modal-description">
+                        The lead with patient id : {rowData?.patientId} has been closed.
+                      </p>
+                      <Box
+                        sx={{
+                          width: "100%",
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          marginTop: "2.625rem",
+                        }}
+                      >
+                        <Typography
+                          onClick={() => setOpenChildCloseLead(false)}
+                          sx={{
+                            color: theme.palette.primary.main,
+                            cursor: "pointer",
+                            ":hover": {
+                              transform: "scale(1.1)",
+                            },
+                          }}
+                        >
+                          OK
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Modal>
+                </React.Fragment>
+
+                {
+                  openSDModal &&
+                  <Box>
+                    <Box>
+                      <Modal
+                        open={openSDModal}
+                        onClose={() => setOpenSDModal(false)}
+                        sx={{ display: "flex", justifyContent: "center", paddingTop: "4rem" }}
+                      >
+                        <Box sx={{ width: "37.125rem", height: "15.125rem", backgroundColor: theme.palette.primary.light, padding: "25px" }}
+                        >
+                          <Box sx={{ paddingBottom: "0.5rem" }}>
+                            <Typography id="modal-modal-title" variant="h6" component="h2">
+                              Select the date range
+                            </Typography>
+                          </Box>
+
+                          <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                            <Box>
+                              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                <DatePicker
+                                  label={
+                                    <span>
+                                      <span>From</span>
+                                      <span style={{ color: "red" }}>*</span>
+                                    </span>
+                                  }
+                                  // value={dayjs(saveDataFrom)}
+                                  value={saveDataFrom ? dayjs(saveDataFrom) : null}
+                                  onChange={(newValue) => handleFromDate(newValue)}
+                                  disableHighlightToday
+                                  format="DD/MM/YYYY"
+                                  minDate={dayjs('2023-01-01')}
+                                  slotProps={{
+                                    actionBar: { actions: ['clear', 'cancel'], onClear: () => setSaveDataFrom(null) },
+                                    textField: { size: 'small' }
+                                  }}
+                                  disableFuture
+                                />
+                              </LocalizationProvider>
+                            </Box>
+
+                            <Box>
+                              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                <DatePicker
+                                  label={
+                                    <span>
+                                      <span>To</span>
+                                      <span style={{ color: "red" }}>*</span>
+                                    </span>
+                                  }
+
+                                  value={saveDataTo ? dayjs(saveDataTo) : null}
+                                  // value={dayjs(saveDataTo)}
+                                  onChange={(newValue) => handleToDate(newValue)}
+                                  disableHighlightToday
+                                  format="DD/MM/YYYY"
+                                  slotProps={{
+                                    actionBar: { actions: ['clear', 'cancel'], onClear: () => setSaveDataTo(null) },
+                                    textField: { size: 'small' }
+                                  }}
+                                  disableFuture
+                                />
+                              </LocalizationProvider>
+                            </Box>
+                          </Box>
+
+
+                          <Stack spacing={2} direction="row" sx={{ mt: 6, float: "right" }}>
+                            <Button onClick={() => setOpenSDModal(false)}>
+                              CANCEL
+                            </Button>
+                            <Button variant="contained"
+                              style={{ borderRadius: "0.25rem", boxShadow: "none" }}
+                              onClick={handleConfirmToSaveData}
+                            >
+                              CONFIRM
+                            </Button>
+                          </Stack>
+
+
+                        </Box>
+
+                      </Modal>
+                    </Box>
+                  </Box>
+                }
+              </Box>
+            </Box>}
+      </PageContainer>
+    </Box>
+  );
+};
+
+// Define the layout for the CallerAgent component.
+CallerAgent.getLayout = function getLayout(page: React.ReactElement) {
+  return <Layout>{page}</Layout>;
+};
+
+
+// Server-side props function to handle authentication.
+export function getServerSideProps(context: any) {
+  return protectedPageRoute(context, null, async () => {
+    return {
+      props: {},
+    };
+  });
+}
+
+// Export the CallerAgent component as the default export.
+export default CallerAgent;
+
+
+
+//High order value component
+import Layout from "@/components/Layout";
+import protectedPageRoute from "@/helper/requireAuthentication";
+import theme from "@/theme";
+import {
+	Box, Button, Modal, Typography,
+	CircularProgress
+} from "@mui/material";
+import React from "react";
+import PageContainer from "ui/common/containers/PageContainer";
+import HighValueOrderList from "./HighValueOrderList";
+import { createCampaign, enableDND, getHighOrderValue, hightOrderCaptureResponse, unlockCallCenterOrder } from "@/modules";
+import tick from "../../../../apps/panel/public/images/blueTick.png";
+import Image from "next/image";
+import DispositionFormCA from "./DispositionFormCA";
+import { handleApiError } from "@/utils/handleApiError";
+import { getCookie, setCookie } from "cookies-next";
+import HighValueKnowlarity from "./CallerAgent/HighValueKnowlarity";
+import CachedIcon from '@mui/icons-material/Cached';
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+
+
+
+const HighValueOrder = (props: any) => {
+	const { filters, tab } = props;
+	const [tableData, setTableData] = React.useState([]);
+	const [isLoading, setIsLoading] = React.useState<boolean>(false);
+	const [totalRecords, setTotalRecords] = React.useState<any>();
+	const [pageNumberClicked, setPageNumberClicked] = React.useState<any>(1);
+	const [pageSize, setPageSize] = React.useState<any>(10);
+	const [closeLeadModal, setCloseLeadModal] = React.useState(false)
+	const [rowDataCL, setRowDataCL] = React.useState([])
+	const [captureResponseModal, setCaptureResponseModal] = React.useState(false)
+	const [rowDataCR, setRowDataCR] = React.useState<any>([])
+	const [openNextStepModal, setOpenNextStepModal] = React.useState(false)
+	const [successMsgModal, setSuccessMsgModal] = React.useState(false)
+	const [captureResponseFlag, setCaptureResponseFlag] = React.useState(false)
+	const [countRecords, setCountRecords] = React.useState(0)
+	const [open, setOpen] = React.useState<boolean>(false);
+	const [alertDetails, setAlertDetails] = React.useState<any>({ message: "success", type: "success" });
+	const [itemSelected, setItemSelected] = React.useState<string[]>([]);
+	const [campaignLoader, setCampaignLoader] = React.useState<boolean>(false);
+	const [agentNumber, setAgentNumber] = React.useState<any>('');
+	const [agentModal, setAgentModal] = React.useState<boolean>(false);
+	const [modalType, setModalType] = React.useState<"capture" | "close" | "dnd" | null>(null);
+
+	// before returning JSX
+	const tableDataWithKey = tableData.map((row: any) => ({
+		...row,
+		patientPrescriptionKey: `${row.patientId}_${row.prescriptionId}`, // 👈 new key
+	}));
+
+	const getHighOrderValueData = async () => {
+		setIsLoading(true);
+
+		try {
+			const response = await getHighOrderValue({
+				leadStatus: filters.leadStatus,
+				page: pageNumberClicked,
+				limit: pageSize,
+				department: filters.dept,
+				searchString: filters.searchString,
+				date: filters.date,
+				unit: filters.unit,
+			});
+
+			if (response.success) {
+				setTableData(response.data?.data || []);
+				setTotalRecords(response.data?.totalRecords || 0);
+				setCountRecords(response.data?.totalRecords || 0);
+			} else {
+				console.error("API Error:", response.message);
+				handleApiError(response.message);
+			}
+		} catch (error) {
+			console.error("Unexpected Error:", error);
+			handleApiError("Something went wrong while fetching data.");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const handleCloseLead = (value: any) => {
+		setCloseLeadModal(true)
+		setRowDataCL(value)
+	}
+
+	const handleConfirmCloseLead = async (rowDataCL: any) => {
+		try {
+			const res = await hightOrderCaptureResponse({
+				patientId: rowDataCL?.patientId,
+				prescriptionId: rowDataCL?.prescriptionId,
+				followUpStatus: "No",
+				callDisposition: '',
+				serviceDispositionL1: '',
+				serviceDispositionL2: '',
+				comments: '',
+				dnd: true,
+				mobileNo: rowDataCL.phoneNumber
+			});
+
+			if (res?.statusCode === 201 || res?.success) {
+				setCloseLeadModal(false);
+				setTimeout(() => {
+					setModalType("close");
+					setSuccessMsgModal(true);
+				}, 100);
+
+				getHighOrderValueData();
+			}
+
+			// if (res?.statusCode === 201) {
+			// 	getHighOrderValueData();
+			// 	setCloseLeadModal(false);
+			// 	setSuccessMsgModal(true);
+			// }
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
+
+	//open capturing response modal
+	const handleCaptureResponse = (value: any) => {
+		setCaptureResponseModal(true)
+		setRowDataCR(value)
+	}
+
+	const handleSubmitCaptureResponse = async (
+		selectedReason: any,
+		valueFollowups: any,
+		followUpDate: any,
+		valueTime: any,
+		selectedCD: any,
+		selectedL1: any,
+		selectedL2: any,
+		additionalComment: string,
+		dnd: boolean,
+		mobileNo: string
+	) => {
+		try {
+			const res = await hightOrderCaptureResponse({
+				comments: additionalComment,
+				patientId: rowDataCR?.patientId,
+				prescriptionId: rowDataCR?.prescriptionId,
+				orderId: rowDataCR?.orderId,
+				followUpStatus: valueFollowups,
+				...(followUpDate && { followUpDate }),
+				callDisposition: selectedCD,
+				serviceDispositionL1: selectedL1,
+				serviceDispositionL2: selectedL2,
+				timings: valueTime?.format("hh:mm A"),
+				dnd,
+				mobileNo,
+			});
+
+			// if (res?.statusCode === 201) {
+			// 	getHighOrderValueData();
+			// 	setCaptureResponseFlag(true);
+			// 	setSuccessMsgModal(true);
+			// }
+			if (res.success || res?.statusCode === 201) {
+				getHighOrderValueData();
+				setOpenNextStepModal(false);
+
+				setCaptureResponseModal(false);
+
+				if (dnd === false) {
+					setModalType("capture");
+					setSuccessMsgModal(true);
+				} else {
+					setModalType("dnd");
+					setSuccessMsgModal(true);
+				}
+			}
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setOpenNextStepModal(false);
+		}
+	};
+
+
+	// Effect to fetch high value order when filters, page, or page size change
+	React.useEffect(() => {
+		if (tab !== 'KNOWLARITY') {
+			getHighOrderValueData();
+		}
+	}, [filters, pageNumberClicked, pageSize]);
+
+	//unlocking order
+	const unlockingOrder = async (row: any) => {
+		try {
+			const res = await unlockCallCenterOrder({
+				"patientId": row?.patientId,
+				"prescriptionId": row?.prescriptionId,
+				"name": tab,
+			})
+		}
+		catch (error) {
+			handleApiError(error);
+		}
+	}
+
+	//closing capture response modal
+	const closingCaptureResponseModal = (row: any) => {
+		setCaptureResponseModal(false)
+		unlockingOrder(row)
+	}
+
+	//closing close lead modal
+	const closingCloseLeadModal = () => {
+		setCloseLeadModal(false)
+		unlockingOrder(rowDataCL)
+	}
+
+	//submit for dnd
+	const handleDND = async (row: any) => {
+		console.log('row ji', row)
+		try {
+			const res = await enableDND({
+				"phoneNumber": row?.phoneNumber,
+				"patientId": row?.patientId,
+				"dnd": true
+			})
+		}
+		catch (error) {
+			handleApiError(error);
+		}
+	}
+
+	if (tab === "KNOWLARITY") {
+		return <HighValueKnowlarity filters={filters} tab={tab} />;
+	}
+
+	return (
+		<>
+			<Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+				<Typography sx={{ color: '#034EA1' }}>Count: {countRecords}</Typography>
+				<Button variant="text" onClick={() => getHighOrderValueData()} sx={{ textTransform: 'none', borderRadius: 0 }}>
+					{!isLoading ? <CachedIcon sx={{ color: theme.palette.primary.main }} /> :
+						<CircularProgress size={24} sx={{ ml: 1 }} />}
+				</Button>
+			</Box>
+			<Box
+				sx={{
+					bgcolor: theme.palette.primary.light,
+					display: "flex",
+					height: "100%"
+				}}
+			>
+				{/* Page Container */}
+				<PageContainer>
+					<Box
+						sx={{
+							display: "flex",
+							alignItems: "flex-start",
+							justifyContent: "flex-start",
+							//marginTop: "1.75rem",
+						}}
+					>
+						<React.Fragment>
+							<HighValueOrderList
+								tableData={tableDataWithKey}
+								isLoading={isLoading}
+								pageNumberClicked={pageNumberClicked}
+								setPageNumberClicked={(page: number) => setPageNumberClicked(page)}
+								recordsToShow={pageSize}
+								setRecordsToShow={(ps: number) => setPageSize(ps)}
+								totalRecords={totalRecords}
+								setTotalRecords={setTotalRecords}
+								getConversionPendingData={''}
+								handleCloseLead={handleCloseLead}
+								handleCaptureResponse={handleCaptureResponse}
+								agentNumber={''}
+								knowlarityEvents={[]}
+								tab={tab}
+							/>
+						</React.Fragment>
+
+
+						{/* Close the lead */}
+						{/* {
+							closeLeadModal && (
+								<Box>
+									<Modal
+										open={closeLeadModal}
+										onClose={closingCloseLeadModal}
+										sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+									>
+										<Box sx={{ width: "25rem", height: "15rem", backgroundColor: theme.palette.primary.light, padding: "25px" }}
+										>
+											<Typography id="modal-modal-title" variant="h6" component="h2">
+												Close the lead
+											</Typography>
+											<Typography sx={{ padding: "1rem 0 4rem 0" }}>
+												Do you confirm to close the lead?
+											</Typography>
+											<Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+												<Button onClick={closingCloseLeadModal}>CANCEL</Button>
+												<Button
+													onClick={() => handleConfirmCloseLead(rowDataCL)}
+													variant="contained"
+													style={{ borderRadius: "0px" }}
+												>
+													YES, I CONFIRM
+												</Button>
+											</Box>
+
+										</Box>
+
+									</Modal>
+								</Box>
+							)
+						} */}
+
+
+						{/* succesffull action modal for msg */}
+						{/* {
+							successMsgModal && (
+								<Modal
+									open={successMsgModal}
+									onClose={() => setSuccessMsgModal(false)}
+									aria-labelledby="modal-modal-title"
+									aria-describedby="modal-modal-description"
+									sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+								>
+									<Box sx={{ width: "25rem", height: "15rem", backgroundColor: theme.palette.primary.light, padding: "25px", display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column" }}>
+										<Image
+											src={tick}
+											height={40}
+											width={40}
+											style={{ objectFit: "cover", margin: "0.5rem" }}
+											alt="tick mark"
+										/>
+										{captureResponseFlag ? <Typography sx={{ fontSize: "1rem", marginTop: "0.5rem" }}>
+											The response has been captured succesffully !!!
+										</Typography> : <Typography sx={{ fontSize: "1rem", marginTop: "0.5rem" }}>
+											The lead has been closed succesffully !!!
+										</Typography>}
+										<Box
+											sx={{
+												width: "100%",
+												display: "flex",
+												justifyContent: "center",
+												marginTop: "3.625rem",
+											}}
+										>
+											<Typography
+												onClick={() => setSuccessMsgModal(false)}
+												sx={{
+													color: theme.palette.primary.main,
+													cursor: "pointer",
+													":hover": {
+														transform: "scale(1.1)",
+													},
+												}}
+											>
+												OK
+											</Typography>
+										</Box>
+									</Box>
+								</Modal>
+							)
+						} */}
+
+						<Modal
+							open={closeLeadModal}
+							onClose={closingCloseLeadModal}
+							sx={{ display: "flex", justifyContent: "center", alignItems: "center",
+								zIndex: (theme) => theme.zIndex.modal + 10,
+							 }}
+						>
+							<Box
+								sx={{
+									width: "25rem",
+									height: "15rem",
+									backgroundColor: theme.palette.primary.light,
+									padding: "25px",
+									display: "flex",
+									justifyContent: "center",
+									alignItems: "center",
+									flexDirection: "column",
+								}}
+							>
+								<Typography variant="h6" align="center" sx={{ padding: "1rem 0 4rem 0" }}>
+									Do you confirm to close the lead?
+								</Typography>
+								<Box display="flex" justifyContent="center" gap={2} mt={2}>
+									<Button onClick={closingCloseLeadModal} color="error" variant="outlined">
+										No, Cancel
+									</Button>
+									<Button
+										onClick={() => handleConfirmCloseLead(rowDataCL)}
+										color="success"
+										variant="contained"
+									>
+										Yes, I Confirm
+									</Button>
+								</Box>
+							</Box>
+						</Modal>
+
+						{/* Unified Success/DND Modal */}
+						<Modal
+							open={successMsgModal}
+							onClose={() => setSuccessMsgModal(false)}
+							sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+						>
+							<Box
+								sx={{
+									width: "22rem",
+									bgcolor: "background.paper",
+									borderRadius: 3,
+									p: 4,
+									boxShadow: 24,
+									textAlign: "center",
+									display: "flex",
+									flexDirection: "column",
+									alignItems: "center",
+									gap: 2,
+								}}
+							>
+								{/* Icon changes by modalType */}
+								<Box
+									sx={{
+										width: 60,
+										height: 60,
+										borderRadius: "50%",
+										backgroundColor:
+											modalType === "dnd" ? "error.light" : "success.light",
+										display: "flex",
+										justifyContent: "center",
+										alignItems: "center",
+										mb: 1,
+										fontSize: "1.5rem",
+									}}
+								>
+									{/* {modalType === "dnd" ? "⚠️" : "✅"} */}
+									{modalType === "dnd" ? <WarningAmberIcon fontSize="large" /> : <CheckCircleOutlineIcon fontSize="large" />}
+								</Box>
+
+								{modalType === "close" && (
+									<>
+										<Typography variant="h6" fontWeight="bold" color="success.main">
+											Lead Closed Successfully!
+										</Typography>
+										<Typography variant="body2" color="text.secondary">
+											The lead has been closed and saved in the system.
+										</Typography>
+									</>
+								)}
+
+								{modalType === "capture" && (
+									<>
+										<Typography variant="h6" fontWeight="bold" color="success.main">
+											Response Captured Successfully!
+										</Typography>
+										<Typography variant="body2" color="text.secondary">
+											The patient’s response has been recorded.
+										</Typography>
+									</>
+								)}
+
+								{modalType === "dnd" && (
+									<>
+										<Typography variant="h6" fontWeight="bold" color="error.main">
+											DND Enabled!
+										</Typography>
+										<Typography variant="body2" color="text.secondary">
+											DND has been enabled for patient {rowDataCR?.patientId}.
+										</Typography>
+									</>
+								)}
+
+								<Button
+									onClick={() => setSuccessMsgModal(false)}
+									variant="contained"
+									sx={{
+										mt: 2,
+										borderRadius: 2,
+										px: 4,
+										textTransform: "none",
+										bgcolor: modalType === "dnd" ? "error.main" : "success.main",
+									}}
+								>
+									OK
+								</Button>
+							</Box>
+						</Modal>
+						{/* Capture Response */}
+						<DispositionFormCA 
+						open={captureResponseModal} 
+						onClose={() => closingCaptureResponseModal(rowDataCR)} 
+						handleSubmitCapture={handleSubmitCaptureResponse} 
+						rowData={rowDataCR} />
+
+
+					</Box>
+				</PageContainer>
+			</Box>
+		</>
+	);
+};
+
+export default HighValueOrder;
