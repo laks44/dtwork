@@ -1595,3 +1595,401 @@ const HighValueOrder = (props: any) => {
 };
 
 export default HighValueOrder;
+
+
+
+
+
+
+
+
+
+
+
+
+
+import CustomLabel from "@/components/CustomLabel";
+import Layout from "@/components/Layout";
+import CallerAgentList from "@/components/CallerAgentList";
+import protectedPageRoute from "@/helper/requireAuthentication";
+import {
+  Box,
+  Tab,
+  Tabs,
+  TabProps,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  TextField,
+  Stack,
+  Button,
+  Modal,
+  Typography,
+  Collapse,
+  Tooltip,
+  Menu,
+} from "@mui/material";
+
+import Image from "next/image";
+import React, { useEffect, useState } from "react";
+import { NextPageWithLayout } from "../_app";
+import { styled } from "@mui/system";
+import {
+  captureResponsePaymentPending,
+  closeLeadPaymentPending,
+  enableDND,
+  getConversionPendingCount,
+  getGeneralLeadsOrderCount,
+  getHighValueOrderCount,
+  getRefillStatusCount,
+  getUnitList,
+  saveCallCenterData,
+  unlockCallCenterOrder,
+} from "@/modules";
+import theme from "@/theme";
+import PageContainer from "ui/common/containers/PageContainer";
+import { getCookie } from "cookies-next";
+import Select, { SelectChangeEvent } from "@mui/material/Select";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import dayjs from "dayjs";
+import CallerAgentRefillReminder from "@/components/CallerAgentRefillReminder";
+import ConversionPending from "@/components/ConversionPending";
+import HighValueOrder from "@/components/HighValueOrder";
+import DispositionFormCA from "@/components/DispositionFormCA";
+import exportFromJSON from "export-from-json";
+import GeneralLeadsOrder from "@/components/GeneralLeadsOrder";
+import { decryptToken } from "@/helper";
+import jwtDecode from "jwt-decode";
+import Reports from "@/components/Reports";
+import { handleApiError } from "@/utils/handleApiError";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+
+// Define the CallerAgent functional component.
+const CallerAgent: NextPageWithLayout = () => {
+  interface StyledTabProps extends TabProps {
+    selected?: boolean;
+  }
+
+  const StyledTab = styled(Tab, {
+    shouldForwardProp: (prop) => prop !== "selected",
+  })<StyledTabProps>(({ selected }) => ({
+    "&.MuiTab-root:hover": {
+      backgroundColor: !selected && "rgba(0, 0, 0, 0.04)",
+    },
+    background: selected ? "rgba(3, 78, 161, 0.08)" : "transparent",
+    boxShadow: "0.0625rem 0.0625rem 0.0625rem rgba(0, 0, 0, 0.12)",
+    width: "14rem",
+    alignItems: "start",
+  }));
+
+  const callerAgentTabs: any[] = [
+    { key: "PAYMENTS_PENDING", value: 0, option: "" },
+    { key: "REFILL_REMINDERS", value: 0, option: "ALL", expandable: true },
+    { key: "REJECTED", value: 0, option: "rejected" },
+    { key: "NO_RESPONSE", value: 0, option: "noResponse" },
+    { key: "CONVERSION_PENDING", value: 0, option: "" },
+    { key: "HIGH_VALUE_ORDER", value: 0, option: "ALL", expandable: true },
+    { key: "KNOWLARITY", value: 0, option: "knowlarity" },
+    { key: "GENERAL_LEADS", value: 0, option: "" },
+    { key: "REPORTS", value: "", option: "" },
+  ];
+
+  // State
+  const [tabs, setTabs] = useState<any[]>(callerAgentTabs);
+  const [expandMenu, setExpandMenu] = useState(false);
+  const [highValueExpandMenu, setHighValueExpandMenu] = useState(false);
+  const [query, setQuery] = useState<any>([]);
+  const [leadStatus, setLeadStatus] = useState<any>("ALL");
+  const [dateValue, setDateValue] = useState<any>(null);
+  const [modifiedDate, setModifiedDate] = useState<string>("");
+  const [open, setOpen] = useState(false);
+  const [selectedTabMenu, setSelectedTabMenu] = useState("PAYMENTS_PENDING");
+  const [rowData, setRowData] = useState<any>([]);
+  const [rowDataLead, setRowDataLead] = useState<any>([]);
+  const [render, setRender] = useState(false);
+
+  // New modal flow states
+  const [closeLeadModal, setCloseLeadModal] = useState(false);
+  const [successMsgModal, setSuccessMsgModal] = useState(false);
+  const [modalType, setModalType] = useState<"close" | "capture" | "dnd" | null>(null);
+  const [rowDataCR, setRowDataCR] = useState<any>(null);
+
+  const [dept, setDept] = useState<any>("ALL");
+  const [orderDirection, setOrderDirection] = useState<any>("");
+  const [unit, setUnit] = useState<any>("ALL");
+  const [unitData, setUnitData] = useState<any[]>([]);
+  const [conversionTabCount, setConversionTabCount] = useState("");
+  const [highOrderValueTabCount, setHighOrderValueCountData] = useState("");
+  const [generalLeadsOrderValueTabCount, setGeneralLeadsValueTabCount] = useState("");
+  const [isCallCenterAdmin, setIsCallCenterAdmin] = useState(false);
+
+  // Handlers
+  const handleOpen = (value: any) => {
+    setOpen(true);
+    setRowData(value);
+  };
+  const handleOpenLead = (value: any) => {
+    setRowDataLead(value);
+    setCloseLeadModal(true);
+  };
+
+  const handleConfirmCloseLead = async ( any) => {
+    try {
+      const res = await closeLeadPaymentPending(data);
+      if (res?.statusCode === 201 || res?.message === "success") {
+        setCloseLeadModal(false);
+        setModalType("close");
+        setSuccessMsgModal(true);
+        setRender(!render);
+      }
+    } catch (err) {
+      handleApiError(err);
+    }
+  };
+
+  const handleSubmitCapture = async (
+    selectedReason: any,
+    valueFollowups: any,
+    followUpDate: any,
+    valueTime: any,
+    selectedCD: any,
+    selectedL1: any,
+    selectedL2: any,
+    additionalComment: string,
+    dnd: boolean,
+    mobileNo: string
+  ) => {
+    try {
+      const res = await captureResponsePaymentPending({
+        orderId: rowData?.orderId,
+        response: selectedReason,
+        followUpDate,
+        callDisposition: selectedCD,
+        serviceDispositionL1: selectedL1,
+        serviceDispositionL2: selectedL2,
+        timings: valueTime?.format("hh:mm A"),
+        comments: additionalComment,
+        dnd,
+        mobileNo,
+      });
+      if (res?.statusCode === 201 || res?.message === "success") {
+        setOpen(false);
+        setModalType(dnd ? "dnd" : "capture");
+        setRowDataCR(rowData);
+        setSuccessMsgModal(true);
+        setRender(!render);
+      }
+    } catch (err) {
+      handleApiError(err);
+    }
+  };
+
+  // Effects
+  useEffect(() => {
+    (async () => {
+      try {
+        const r1 = await getRefillStatusCount();
+        const r2 = await getConversionPendingCount();
+        const r3 = await getHighValueOrderCount();
+        const r4 = await getGeneralLeadsOrderCount();
+        const r5 = await getUnitList();
+
+        setConversionTabCount(r2[0].count);
+        setHighOrderValueCountData(r3.data.totalCount.count);
+        setGeneralLeadsValueTabCount(r4?.data?.totalCount?.count);
+        setUnitData(r5?.data);
+      } catch (err) {
+        handleApiError(err);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    const token: any = getCookie("accessToken");
+    const temp = decryptToken(token);
+    const decoded: any = jwtDecode(temp);
+    if (decoded?.roles?.includes("call_center_admin")) {
+      setIsCallCenterAdmin(true);
+    }
+  }, []);
+
+  return (
+    <Box sx={{ bgcolor: theme.palette.primary.light, display: "flex", height: "100%" }}>
+      {/* Sidebar Tabs */}
+      <Box sx={{ width: "13rem", borderRight: `1px solid ${theme.palette.grey[600]}` }}>
+        <Tabs orientation="vertical" value={selectedTabMenu}>
+          <StyledTab
+            selected={["PAYMENTS_PENDING"].includes(selectedTabMenu)}
+            label={<CustomLabel label={"PAYMENTS_PENDING"} value={tabs.value} />}
+            value={"PAYMENTS_PENDING"}
+            onClick={() => setSelectedTabMenu("PAYMENTS_PENDING")}
+          />
+          {/* other tab items ... */}
+        </Tabs>
+      </Box>
+
+      <PageContainer>
+        <Box sx={{ padding: "1rem 1.5rem" }}>
+          {/* Content goes here */}
+          {selectedTabMenu === "PAYMENTS_PENDING" && (
+            <CallerAgentList
+              query={query}
+              leadStatus={leadStatus}
+              modifiedDate={modifiedDate}
+              unit={unit}
+              render={render}
+              orderDirection={orderDirection}
+              handleCapture={handleOpen}
+              handleCloseLead={handleOpenLead}
+              tab={selectedTabMenu}
+            />
+          )}
+          {selectedTabMenu === "REFILL_REMINDERS" && (
+            <CallerAgentRefillReminder filters={{}} tab="REFILL_REMINDERS" />
+          )}
+          {selectedTabMenu === "CONVERSION_PENDING" && (
+            <ConversionPending filters={{}} tab="CONVERSION_PENDING" />
+          )}
+          {selectedTabMenu === "HIGH_VALUE_ORDER" && (
+            <HighValueOrder filters={{}} tab="HIGH_VALUE_ORDER" />
+          )}
+          {selectedTabMenu === "GENERAL_LEADS" && (
+            <GeneralLeadsOrder filters={{}} tab="GENERAL_LEADS" />
+          )}
+
+          {/* Capture Response */}
+          <DispositionFormCA
+            open={open}
+            onClose={() => setOpen(false)}
+            handleSubmitCapture={handleSubmitCapture}
+            rowData={rowData}
+          />
+
+          {/* Close Lead Modal */}
+          <Modal open={closeLeadModal} onClose={() => setCloseLeadModal(false)}>
+            <Box
+              sx={{
+                width: "25rem",
+                height: "15rem",
+                bgcolor: theme.palette.primary.light,
+                p: 3,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Typography variant="h6" align="center" sx={{ mb: 3 }}>
+                Do you confirm to close the lead?
+              </Typography>
+              <Box display="flex" gap={2}>
+                <Button onClick={() => setCloseLeadModal(false)} color="error" variant="outlined">
+                  No, Cancel
+                </Button>
+                <Button
+                  onClick={() => handleConfirmCloseLead(rowDataLead)}
+                  color="success"
+                  variant="contained"
+                >
+                  Yes, I Confirm
+                </Button>
+              </Box>
+            </Box>
+          </Modal>
+
+          {/* Unified Success/DND Modal */}
+          <Modal open={successMsgModal} onClose={() => setSuccessMsgModal(false)}>
+            <Box
+              sx={{
+                width: "22rem",
+                bgcolor: "background.paper",
+                borderRadius: 3,
+                p: 4,
+                textAlign: "center",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 2,
+              }}
+            >
+              <Box
+                sx={{
+                  width: 60,
+                  height: 60,
+                  borderRadius: "50%",
+                  bgcolor: modalType === "dnd" ? "error.light" : "success.light",
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                {modalType === "dnd" ? (
+                  <WarningAmberIcon fontSize="large" />
+                ) : (
+                  <CheckCircleOutlineIcon fontSize="large" />
+                )}
+              </Box>
+
+              {modalType === "close" && (
+                <>
+                  <Typography variant="h6" color="success.main" fontWeight="bold">
+                    Lead Closed Successfully!
+                  </Typography>
+                  <Typography variant="body2">The lead has been closed in the system.</Typography>
+                </>
+              )}
+              {modalType === "capture" && (
+                <>
+                  <Typography variant="h6" color="success.main" fontWeight="bold">
+                    Response Captured Successfully!
+                  </Typography>
+                  <Typography variant="body2">The patient’s response has been recorded.</Typography>
+                </>
+              )}
+              {modalType === "dnd" && (
+                <>
+                  <Typography variant="h6" color="error.main" fontWeight="bold">
+                    DND Enabled!
+                  </Typography>
+                  <Typography variant="body2">
+                    DND has been enabled for patient {rowDataCR?.patientId}.
+                  </Typography>
+                </>
+              )}
+
+              <Button
+                onClick={() => setSuccessMsgModal(false)}
+                variant="contained"
+                sx={{
+                  mt: 2,
+                  borderRadius: 2,
+                  px: 4,
+                  textTransform: "none",
+                  bgcolor: modalType === "dnd" ? "error.main" : "success.main",
+                }}
+              >
+                OK
+              </Button>
+            </Box>
+          </Modal>
+        </Box>
+      </PageContainer>
+    </Box>
+  );
+};
+
+CallerAgent.getLayout = function getLayout(page: React.ReactElement) {
+  return <Layout>{page}</Layout>;
+};
+
+export function getServerSideProps(context: any) {
+  return protectedPageRoute(context, null, async () => {
+    return { props: {} };
+  });
+}
+
+export default CallerAgent;
+
