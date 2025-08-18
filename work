@@ -1085,3 +1085,282 @@ export function getServerSideProps(context: any) {
 
 // Export the CallerAgent component as the default export.
 export default CallerAgent;
+
+
+
+
+
+
+
+
+
+
+
+
+import CustomLabel from "@/components/CustomLabel";
+import Layout from "@/components/Layout";
+import CallerAgentList from "@/components/CallerAgentList";
+import protectedPageRoute from "@/helper/requireAuthentication";
+import {
+  Box,
+  Tab,
+  Tabs,
+  TabProps,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  TextField,
+  Stack,
+  Button,
+  Modal,
+  Typography,
+  Collapse,
+  Tooltip,
+  Menu,
+} from "@mui/material";
+
+import Image from "next/image";
+import React, { useEffect, useState } from "react";
+import { NextPageWithLayout } from "../_app";
+import { styled } from "@mui/system";
+import { 
+  captureResponsePaymentPending, 
+  closeLeadPaymentPending, 
+  enableDND, 
+  getConversionPendingCount, 
+  getGeneralLeadsOrderCount, 
+  getHighValueOrderCount, 
+  getRefillStatusCount, 
+  getUnitList, 
+  saveCallCenterData, 
+  unlockCallCenterOrder 
+} from "@/modules";
+import theme from "@/theme";
+import PageContainer from "ui/common/containers/PageContainer";
+import { getCookie } from "cookies-next";
+import Select, { SelectChangeEvent } from "@mui/material/Select";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import dayjs from "dayjs";
+import "dayjs/locale/en-gb";
+import tick from "../../../public/images/blueTick.png";
+import CallerAgentRefillReminder from "@/components/CallerAgentRefillReminder";
+import ConversionPending from "@/components/ConversionPending";
+import HighValueOrder from "@/components/HighValueOrder";
+import DispositionFormCA from "@/components/DispositionFormCA";
+import exportFromJSON from "export-from-json";
+import GeneralLeadsOrder from "@/components/GeneralLeadsOrder";
+import { decryptToken } from "@/helper";
+import jwtDecode from "jwt-decode";
+import Reports from "@/components/Reports";
+import { handleApiError } from "@/utils/handleApiError";
+
+// Define a type for the props of the StyledTab component.
+interface StyledTabProps extends TabProps {
+  selected?: boolean;
+}
+
+// Define the CallerAgent functional component.
+const CallerAgent: NextPageWithLayout = () => {
+  // Define the StyledTab component using the styled function.
+  const StyledTab = styled(Tab, {
+    shouldForwardProp: (prop) => prop !== "selected",
+  })<StyledTabProps>(({ theme, selected }) => ({
+    "&.MuiTab-root:hover": {
+      backgroundColor: !selected && "rgba(0, 0, 0, 0.04)",
+    },
+    background: selected ? "rgba(3, 78, 161, 0.08)" : "transparent",
+    boxShadow: "0.0625rem 0.0625rem 0.0625rem rgba(0, 0, 0, 0.12)",
+    width: "14rem",
+    alignItems: "start",
+  }));
+
+  // ------------ NEW STATES ------------
+  const [successModalOpen, setSuccessModalOpen] = useState<boolean>(false);
+  const [successMessage, setSuccessMessage] = useState<string>("");
+
+  // Define local state variables using the `useState` hook.
+  const callerAgentTabs: any[] = [
+    { key: "PAYMENTS_PENDING", value: 0, option: "" },
+    { key: "REFILL_REMINDERS", value: 0, option: "ALL", expandable: true },
+    { key: "REJECTED", value: 0, option: "rejected" },
+    { key: "NO_RESPONSE", value: 0, option: "noResponse" },
+    { key: "CONVERSION_PENDING", value: 0, option: "" },
+    { key: "HIGH_VALUE_ORDER", value: 0, option: "ALL", expandable: true },
+    { key: "KNOWLARITY", value: 0, option: "knowlarity" },
+    { key: "GENERAL_LEADS", value: 0, option: "" },
+    { key: "REPORTS", value: "", option: "" },
+  ];
+
+  const [tabs, setTabs] = useState<any[]>(callerAgentTabs);
+  const [expandMenu, setExpandMenu] = useState<boolean>(false);
+  const [highValueExpandMenu, setHighValueExpandMenu] = useState<boolean>(false);
+  const [query, setQuery] = useState<any>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [totalRecords, setTotalRecords] = useState<any>();
+  const [pageNumberClicked, setPageNumberClicked] = useState<any>(1);
+  const [recordsToShow, setRecordsToShow] = useState<any>(10);
+  const [leadStatus, setLeadStatus] = useState<any>("ALL");
+  const [dateValue, setDateValue] = useState<any>(null);
+  const [modifiedDate, setModifiedDate] = useState<string>("");
+  const [open, setOpen] = useState<boolean>(false);
+  const [selectedTabMenu, setSelectedTabMenu] = useState<any>("PAYMENTS_PENDING");
+  const [valueCapture, setValueCapture] = useState<any>("yes");
+  const [responseText, setResponseText] = useState<any>("");
+  const [rowData, setRowData] = useState<any>([]);
+  const [valueFollowups, setValueFollowups] = useState<any>("require more follow ups");
+  const [openLead, setOpenLead] = useState<boolean>(false);
+  const [rowDataLead, setRowDataLead] = useState<any>([]);
+  const [openChildCloseLead, setOpenChildCloseLead] = useState<boolean>(false);
+  const [conversionTabCount, setConversionTabCount] = React.useState("");
+  const [highOrderValueTabCount, setHighOrderValueCountData] = React.useState("");
+  const [generalLeadsOrderValueTabCount, setGeneralLeadsValueTabCount] =
+    React.useState("");
+  const [dept, setDept] = useState<any>("ALL");
+  const [orderDirection, setOrderDirection] = React.useState<any>("");
+  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+  const openSortingMenu = Boolean(anchorEl);
+  const [render, setRender] = useState<boolean>(false);
+  const [openSDModal, setOpenSDModal] = React.useState<any>(false);
+  const [saveDataFrom, setSaveDataFrom] = React.useState<any>(null);
+  const [saveDataTo, setSaveDataTo] = React.useState<any>(null);
+  const [jsonDataToSave, setJsonDataToSave] = React.useState<any>([]);
+  const [unit, setUnit] = React.useState<any>("ALL");
+  const [unitData, setUnitData] = React.useState<any>([]);
+  const [pdfModalOpen, setPdfModalOpen] = React.useState<any>(false);
+  const [countRecords, setCountRecords] = React.useState<any>(0);
+  const [isCallCenterAdmin, setIsCallCenterAdmin] = React.useState<any>(false);
+  const [campaignFilter, setCampaignFilter] = React.useState<any>("ALL");
+
+  // Submit Disposition Capture
+  const handleSubmitCapture = async (
+    selectedReason: any,
+    valueFollowups: any,
+    followUpDate: any,
+    valueTime: any,
+    selectedCD: any,
+    selectedL1: any,
+    selectedL2: any,
+    additionalComment: string,
+    dnd: boolean,
+    mobileNo: string
+  ) => {
+    try {
+      const res = await captureResponsePaymentPending({
+        orderId: rowData?.orderId,
+        answerCall: true,
+        requireMore: rowData?.followUps > 1 ? valueFollowups === "Yes" : false,
+        response: selectedReason,
+        followUpDate,
+        callDisposition: selectedCD,
+        serviceDispositionL1: selectedL1,
+        serviceDispositionL2: selectedL2,
+        timings: valueTime?.format("hh:mm A"),
+        comments: additionalComment,
+        dnd,
+        mobileNo,
+      });
+
+      if (res?.statusCode === 201 || res?.message === "success") {
+        setRender(!render);
+
+        // NEW LOGIC: Set success message based on DND
+        if (dnd) {
+          setSuccessMessage("DND has been Enabled Successfully");
+        } else {
+          setSuccessMessage("Response Captured Successfully");
+        }
+        setSuccessModalOpen(true);
+      }
+    } catch (error) {
+      handleApiError(error);
+    }
+  };
+
+  return (
+    <Box
+      sx={{
+        bgcolor: theme.palette.primary.light,
+        display: "flex",
+        height: "100%",
+        flexDirection: "row",
+      }}
+    >
+      {/* sidebar and tabs render … keep same */}
+
+      <PageContainer>
+        <Box>
+          {/* your other CallerAgentList, CallerAgentRefillReminder etc components */}
+          <DispositionFormCA
+            open={open}
+            onClose={() => setOpen(false)}
+            handleSubmitCapture={handleSubmitCapture}
+            rowData={rowData}
+            handleDND={() => handleDND(rowData)}
+          />
+
+          {/* SUCCESS MODAL */}
+          <Modal
+            open={successModalOpen}
+            onClose={() => setSuccessModalOpen(false)}
+            sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+          >
+            <Box
+              sx={{
+                width: "30rem",
+                height: "12rem",
+                backgroundColor: theme.palette.primary.light,
+                padding: "25px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "column",
+              }}
+            >
+              <Image src={tick} height={40} width={40} alt="success-tick" />
+              <Typography
+                sx={{ marginTop: 2, fontWeight: "bold", fontSize: "1rem" }}
+              >
+                {successMessage}
+              </Typography>
+              <Box
+                sx={{
+                  width: "100%",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginTop: "2rem",
+                }}
+              >
+                <Button
+                  variant="contained"
+                  sx={{ borderRadius: "0" }}
+                  onClick={() => setSuccessModalOpen(false)}
+                >
+                  OK
+                </Button>
+              </Box>
+            </Box>
+          </Modal>
+        </Box>
+      </PageContainer>
+    </Box>
+  );
+};
+
+// Define the layout for the CallerAgent component.
+CallerAgent.getLayout = function getLayout(page: React.ReactElement) {
+  return <Layout>{page}</Layout>;
+};
+
+// Server-side props function to handle authentication.
+export function getServerSideProps(context: any) {
+  return protectedPageRoute(context, null, async () => {
+    return {
+      props: {},
+    };
+  });
+}
+
+// Export the CallerAgent component as the default export.
+export default CallerAgent;
