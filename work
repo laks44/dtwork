@@ -1,999 +1,4 @@
-//High order value component
-import theme from "@/theme";
-import {
-	Box, Button, Modal, Typography
-} from "@mui/material";
-import React from "react";
-import HighValueOrderList from "./HighValueOrderList";
-import DispositionFormCA from "./DispositionFormCA";
-import { handleApiError } from "@/utils/handleApiError";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
-import { useWebSocket } from "@/hooks/useWebSocket";
-import PageContainer from "ui/common/containers/PageContainer";
-import { getCampaignNumbers, getCampaignsList, getHighOrderValue, hightOrderCaptureResponse, unlockCallCenterOrder } from "@/modules";
-import { getCookie, setCookie } from "cookies-next";
-import AgentModal from "./CallerAgent/AgentModal";
-import { Campaign } from "@mui/icons-material";
-import CampaignsList from "./CampaignsList";
-
-// WebSocket message interface
-interface WebSocketMessage {
-	type: string;
-	data: any;
-	timestamp: string;
-}
-
-// Professional modal styles optimized for small screens
-const modalStyles = {
-	display: "flex",
-	justifyContent: "center",
-	alignItems: "center",
-	p: 1, // Add padding for small screens
-	zIndex: (theme: any) => theme.zIndex.modal + 10,
-};
-
-const modalContainerStyles = {
-	bgcolor: "background.paper",
-	borderRadius: 1,
-	p: 3,
-	boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12)",
-	border: "1px solid",
-	borderColor: "divider",
-	textAlign: "center" as const,
-	display: "flex",
-	flexDirection: "column" as const,
-	alignItems: "center",
-	gap: 1.5,
-	minWidth: "280px",
-	maxWidth: "400px",
-	width: "90%",
-	maxHeight: "90vh",
-	overflow: "auto",
-};
-
-const iconContainerStyles = {
-	width: 48,
-	height: 48,
-	borderRadius: "50%",
-	display: "flex",
-	justifyContent: "center",
-	alignItems: "center",
-	mb: 0.5,
-};
-
-const primaryButtonStyles = {
-	borderRadius: 1,
-	px: 2.5,
-	py: 0.75,
-	textTransform: "none" as const,
-	fontWeight: 500,
-	fontSize: "0.875rem",
-	minWidth: "100px",
-	height: "36px",
-};
-
-const secondaryButtonStyles = {
-	borderRadius: 1,
-	px: 2.5,
-	py: 0.75,
-	textTransform: "none" as const,
-	fontWeight: 500,
-	fontSize: "0.875rem",
-	minWidth: "100px",
-	height: "36px",
-};
-
-const Campaigns = (props: any) => {
-	const { filters, tab } = props;
-	// Define department interface
-	interface DepartmentData {
-		id: string;
-		patientId: string;
-		prescriptionId: string;
-		patientName?: string;
-		phoneNumber?: string;
-		leadStatus?: string;
-		department?: string;
-		unit?: string;
-		agent_number?: string;
-		call_status?: string;
-		[key: string]: any; // Allow additional properties
-	}
-
-	const [tableData, setTableData] = React.useState<DepartmentData[]>([]);
-	const [isLoading, setIsLoading] = React.useState<boolean>(false);
-	const [totalRecords, setTotalRecords] = React.useState<number>(0);
-	const [pageNumberClicked, setPageNumberClicked] = React.useState<number>(1);
-	const [pageSize, setPageSize] = React.useState<number>(10); // Keep as 10
-	const [closeLeadModal, setCloseLeadModal] = React.useState(false)
-	const [rowDataCL, setRowDataCL] = React.useState<DepartmentData | null>(null)
-	const [captureResponseModal, setCaptureResponseModal] = React.useState(false)
-	const [rowDataCR, setRowDataCR] = React.useState<DepartmentData | null>(null)
-	const [successMsgModal, setSuccessMsgModal] = React.useState(false)
-	const [itemSelected, setItemSelected] = React.useState<string[]>([]);
-	const [agentNumber, setAgentNumber] = React.useState<string>('');
-	const [agentModal, setAgentModal] = React.useState<boolean>(false);
-	const [modalType, setModalType] = React.useState<"capture" | "close" | "dnd" | null>(null);
-	const [campaignNumbers, setCampaignNumbers] = React.useState<any>([]);
-	const [isLoadingMore, setIsLoadingMore] = React.useState(false);
-	const [loadingProgress, setLoadingProgress] = React.useState(0);
-
-	const debounceTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-
-	// Add refs to track processed calls and prevent duplicates
-	const processedCallsRef = React.useRef<Set<string>>(new Set());
-	const autoCloseTimeoutRef = React.useRef<Map<string, NodeJS.Timeout>>(new Map());
-	const customerNumberRef = React.useRef<string | null>(null);
-
-	// Create refs to always access latest values
-	const filtersRef = React.useRef(filters);
-	const pageNumberClickedRef = React.useRef(pageNumberClicked);
-	const pageSizeRef = React.useRef(pageSize);
-
-	// Update refs when values change
-	React.useEffect(() => {
-		filtersRef.current = filters;
-	}, [filters]);
-
-	React.useEffect(() => {
-		pageNumberClickedRef.current = pageNumberClicked;
-	}, [pageNumberClicked]);
-
-	React.useEffect(() => {
-		pageSizeRef.current = pageSize;
-	}, [pageSize]);
-
-	// before returning JSX
-	const tableDataWithKey = tableData.map((row: any) => ({
-		...row,
-		patientPrescriptionKey: `${row.patientId}_${row.prescriptionId}`,
-	}));
-
-	// Initialize WebSocket connection
-	const { isConnected, on } = useWebSocket({
-		onConnect: () => console.log('Connected to CallerAgent WebSocket'),
-		onDisconnect: () => console.log('Disconnected from CallerAgent WebSocket'),
-		onError: (error) => console.error('WebSocket error:', error),
-	});
-
-	// Add refs to track modal states in real-time
-	const modalStatesRef = React.useRef({
-		captureResponseModal: false,
-		closeLeadModal: false,
-		successMsgModal: false,
-		agentModal: false
-	});
-
-	// Update refs whenever modal states change
-	React.useEffect(() => {
-		modalStatesRef.current = {
-			captureResponseModal,
-			closeLeadModal,
-			successMsgModal,
-			agentModal
-		};
-	}, [captureResponseModal, closeLeadModal, successMsgModal, agentModal]);
-
-	// 🔥 Add scroll handlers ref
-	const scrollHandlersRef = React.useRef<{
-		saveScrollPosition: () => void;
-		restoreScrollPosition: () => void;
-	} | null>(null);
-
-	const handleScrollHandlersReady = React.useCallback((handlers: any) => {
-		scrollHandlersRef.current = handlers;
-	}, []);
-
-	const getHighOrderValueData = React.useCallback(async (preserveScroll = false) => {
-		// ADD: Check modal state before any data operations
-		if (captureResponseModal || closeLeadModal || successMsgModal || agentModal) {
-			console.log("Skipping data refresh due to cron job - modal is open:", {
-				captureResponseModal,
-				closeLeadModal,
-				successMsgModal,
-				agentModal
-			});
-			return;
-		}
-
-		const isAnyModalOpen = () => {
-			const states = modalStatesRef.current;
-			return states.captureResponseModal || states.closeLeadModal ||
-				states.successMsgModal || states.agentModal;
-		};
-
-		if (isAnyModalOpen()) {
-			console.log("Skipping data refresh in highvalueapi - modal is open:", modalStatesRef.current);
-			return;
-		}
-
-		// 🔥 Save scroll position before data refresh (for cron jobs/websocket events)
-		if (preserveScroll && scrollHandlersRef.current) {
-			console.log("💾 Saving scroll position before data refresh");
-			scrollHandlersRef.current.saveScrollPosition();
-		}
-
-		setIsLoading(true);
-
-		try {
-			const currentFilters = filtersRef.current;
-			const currentPage = pageNumberClickedRef.current;
-			const currentPageSize = pageSizeRef.current;
-
-			// const response = await getHighOrderValue({
-			// 	leadStatus: currentFilters.leadStatus,
-			// 	page: currentPage,
-			// 	limit: currentPageSize,
-			// 	department: currentFilters.dept,
-			// 	searchString: currentFilters.searchString,
-			// 	date: currentFilters.date,
-			// 	unit: currentFilters.unit,
-			// 	campaign: currentFilters.campaign,
-			// 	call_status: currentFilters.call_status
-			// });
-			const response = await getCampaignsList({
-				leadStatus: currentFilters.leadStatus || 'ALL',
-				page: currentPage,
-				limit: currentPageSize,
-				searchString: currentFilters.searchString || '',
-				unit: currentFilters.unit,
-				department: currentFilters.dept,
-				category: 'ALL',
-				source: 'ALL'
-			});
-
-			if (response.success) {
-				setTableData(response.data?.data || []);
-				setTotalRecords(response.data?.totalRecords || 0);
-			} else {
-				console.error("API Error:", response.message);
-				handleApiError(response.message);
-			}
-		} catch (error) {
-			console.error("Unexpected Error:", error);
-			handleApiError("Something went wrong while fetching data.");
-		} finally {
-			setIsLoading(false);
-		}
-	}, [captureResponseModal, closeLeadModal, successMsgModal, agentModal]);
-
-	// Fetch campaign numbers
-	const getCampaignNumbersData = React.useCallback(async () => {
-		const isAnyModalOpen = () => {
-			const states = modalStatesRef.current;
-			return states.captureResponseModal || states.closeLeadModal ||
-				states.successMsgModal || states.agentModal;
-		};
-
-		if (isAnyModalOpen()) {
-			console.log("Skipping data refresh in campaignapi - modal is open:", modalStatesRef.current);
-			return;
-		}
-		try {
-			const response = await getCampaignNumbers();
-
-			if (response.success) {
-				setCampaignNumbers(response.data?.numbers || []);
-			} else {
-				console.error("API Error:", response.message);
-				handleApiError(response.message);
-			}
-		} catch (error) {
-			console.error("Unexpected Error:", error);
-			handleApiError("Something went wrong while fetching campaign numbers.");
-		}
-	}, []);
-
-	// Handle knowlarity events with debouncing and duplicate prevention
-	const handleKnowlarityEvent = React.useCallback((eventData: any) => {
-		// Add event validation
-		if (!eventData || !eventData.event_type) {
-			console.warn('Invalid knowlarity event received:', eventData);
-			return;
-		}
-
-		// Log every event for debugging
-		console.log('Knowlarity event received:', {
-			type: eventData.event_type,
-			timestamp: new Date().toISOString(),
-			data: eventData
-		});
-
-		try {
-			const isAnyModalOpen = () => {
-				const states = modalStatesRef.current;
-				return states.captureResponseModal || states.closeLeadModal ||
-					states.successMsgModal || states.agentModal;
-			};
-
-			if (eventData?.event_type === "CUSTOMER_CALL") {
-				console.log("Customer call event detected:", customerNumberRef.current);
-				customerNumberRef.current = eventData?.customer_number;
-			}
-
-			if (eventData?.event_type === "CUSTOMER_ANSWER" || eventData?.event_type === "BRIDGE") {
-				console.log("Call answered or bridged event detected:", customerNumberRef.current, eventData?.customer_number);
-				if (customerNumberRef.current === eventData?.customer_number) {
-					customerNumberRef.current = null;
-				}
-			}
-
-			if (eventData?.event_type === "HANGUP") {
-				console.log("Call hangup event detected:", customerNumberRef.current, eventData?.customer_number);
-
-				const patientId = eventData?.department?.patientId;
-				const prescriptionId = eventData?.department?.prescriptionId;
-				const customerNumber = eventData?.customer_number;
-
-				// Create unique identifier for this call
-				const callIdentifier = `${patientId}_${prescriptionId}_${customerNumber}`;
-
-				// Only process if this is the customer we're tracking and we haven't processed this call already
-				if (customerNumberRef.current === customerNumber &&
-					patientId &&
-					prescriptionId &&
-					!processedCallsRef.current.has(callIdentifier)) {
-
-					// Mark this call as processed immediately
-					processedCallsRef.current.add(callIdentifier);
-
-					// Clear any existing timeout for this call
-					const existingTimeout = autoCloseTimeoutRef.current.get(callIdentifier);
-					if (existingTimeout) {
-						clearTimeout(existingTimeout);
-					}
-
-					// Set a debounced timeout to handle the auto-close
-					const timeout = setTimeout(() => {
-						console.log("Auto-closing lead after debounce:", callIdentifier);
-						handleAutomaticallyCloseLead(patientId, prescriptionId, customerNumber);
-
-						// Clean up after processing
-						autoCloseTimeoutRef.current.delete(callIdentifier);
-
-						// Remove from processed calls after a longer timeout to prevent immediate re-processing
-						setTimeout(() => {
-							processedCallsRef.current.delete(callIdentifier);
-						}, 30000); // 30 seconds cleanup delay
-
-					}, 2000); // 2 second debounce
-
-					autoCloseTimeoutRef.current.set(callIdentifier, timeout);
-
-					// Reset customer number
-					customerNumberRef.current = null;
-				}
-			}
-
-			if (isAnyModalOpen()) {
-				console.log("Skipping data refresh knowlarity- modal is open:", modalStatesRef.current);
-				return;
-			}
-
-			if (captureResponseModal || closeLeadModal || successMsgModal || agentModal) {
-				console.log("Skipping data refresh - modal is open:", {
-					captureResponseModal,
-					closeLeadModal,
-					successMsgModal,
-					agentModal
-				});
-				return;
-			}
-
-			// Clear existing timeout
-			if (debounceTimeoutRef.current) {
-				clearTimeout(debounceTimeoutRef.current);
-			}
-
-			// Set new timeout for debouncing data refresh
-			debounceTimeoutRef.current = setTimeout(() => {
-				if (captureResponseModal || closeLeadModal || successMsgModal || agentModal) {
-					console.log("Skipping data refresh - modal opened while timeout was pending");
-					return;
-				}
-
-				console.log("Executing data refresh after knowlarity event");
-				// 🔥 Pass preserveScroll=true for websocket events
-				getHighOrderValueData(true);
-				setTimeout(() => {
-					getCampaignNumbersData();
-				}, 2000);
-			}, 300);
-		} catch (error) {
-			console.error('Error handling knowlarity event:', error);
-		}
-	}, [getHighOrderValueData, getCampaignNumbersData]);
-
-	const handleCloseLead = (value: any) => {
-		// Clear any pending timeouts when modal opens
-		if (debounceTimeoutRef.current) {
-			clearTimeout(debounceTimeoutRef.current);
-			debounceTimeoutRef.current = null;
-		}
-		setCloseLeadModal(true)
-		setRowDataCL(value)
-	}
-
-	const handleConfirmCloseLead = async (rowDataCL: any) => {
-		try {
-			const res = await hightOrderCaptureResponse({
-				patientId: rowDataCL?.patientId,
-				prescriptionId: rowDataCL?.prescriptionId,
-				followUpStatus: "No"
-			});
-
-			if (res?.statusCode === 201) {
-				// Same pattern: unlock first, then refresh
-				await unlockingOrder(rowDataCL);
-				await getHighOrderValueData();
-				setSuccessMsgModal(true);
-			}
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setCloseLeadModal(false);
-		}
-	};
-
-	//open capturing response modal
-	const handleCaptureResponse = (value: any) => {
-		// Clear any pending timeouts when modal opens
-		if (debounceTimeoutRef.current) {
-			clearTimeout(debounceTimeoutRef.current);
-			debounceTimeoutRef.current = null;
-		}
-		setCaptureResponseModal(true)
-		setRowDataCR(value)
-	}
-
-	const handleAutomaticallyCloseLead = async (patientId: string, prescriptionId: string, customerNumber: string) => {
-		try {
-			// Additional validation to prevent unnecessary API calls
-			if (!patientId || !prescriptionId || !customerNumber) {
-				console.warn("Missing required parameters for auto-close:", { patientId, prescriptionId, customerNumber });
-				return;
-			}
-
-			console.log("Automatically closing lead for:", { patientId, prescriptionId, customerNumber });
-
-			const res = await hightOrderCaptureResponse({
-				comments: "Ringing No Answer and system automatically closed lead",
-				patientId,
-				prescriptionId,
-				followUpStatus: "No",
-				callDisposition: "Non-contact",
-				serviceDispositionL1: "Ringing no Response",
-				serviceDispositionL2: "",
-				dnd: false,
-				mobileNo: customerNumber,
-			});
-
-			if (res.success || res?.statusCode === 201) {
-				console.log("Lead auto-closed successfully for:", { patientId, prescriptionId });
-				getHighOrderValueData();
-				setCaptureResponseModal(false);
-			} else {
-				console.error("Failed to auto-close lead:", res);
-			}
-		} catch (error) {
-			console.error("Error in handleAutomaticallyCloseLead:", error);
-			handleApiError(error);
-		}
-	}
-
-	const handleSubmitCaptureResponse = async (
-		updatedReason: any,
-		valueFollowups: any,
-		followUpDate: any,
-		valueTime: any,
-		selectedCD: any,
-		selectedL1: any,
-		selectedL2: any,
-		additionalComment: string,
-		dnd: boolean,
-		mobileNo: string
-	) => {
-		try {
-			const res = await hightOrderCaptureResponse({
-				comments: additionalComment,
-				patientId: rowDataCR?.patientId,
-				prescriptionId: rowDataCR?.prescriptionId,
-				orderId: rowDataCR?.orderId,
-				followUpStatus: valueFollowups,
-				...(followUpDate && { followUpDate }),
-				callDisposition: selectedCD,
-				serviceDispositionL1: selectedL1,
-				serviceDispositionL2: selectedL2,
-				timings: valueTime?.format("hh:mm A"),
-				dnd,
-				mobileNo,
-			});
-			if (res.success || res?.statusCode === 201) {
-				getHighOrderValueData();
-				setCaptureResponseModal(false);
-				if (dnd === false) {
-					setModalType("capture");
-					setSuccessMsgModal(true);
-				} else {
-					setModalType("dnd");
-					setSuccessMsgModal(true);
-				}
-			}
-		} catch (error) {
-			handleApiError(error);
-		}
-	};
-
-	//unlocking order
-	const unlockingOrder = async (row: any) => {
-		try {
-			const res = await unlockCallCenterOrder({
-				"patientId": row?.patientId,
-				"prescriptionId": row?.prescriptionId,
-				"name": tab,
-			})
-		}
-		catch (error) {
-			handleApiError(error);
-		}
-	}
-
-	//closing capture response modal
-	const closingCaptureResponseModal = async (row: any) => {
-		try {
-			await unlockingOrder(row);
-			await getHighOrderValueData();
-		} catch (error) {
-			console.error("Error closing capture response modal:", error);
-			handleApiError("Failed to unlock order");
-		} finally {
-			setCaptureResponseModal(false);
-		}
-	}
-
-	//closing close lead modal
-	const closingCloseLeadModal = async () => {
-		try {
-			await unlockingOrder(rowDataCL);
-			await getHighOrderValueData();
-		} catch (error) {
-			console.error("Error closing lead modal:", error);
-			handleApiError("Failed to unlock order");
-		} finally {
-			setCloseLeadModal(false);
-		}
-	}
-
-	const handleAgentNumber = () => {
-		setCookie("agent_number", agentNumber);
-		setAgentModal(false);
-	}
-
-	// Add function to load more data
-	const handleLoadMore = React.useCallback(async () => {
-		// 🔥 Better condition checking
-		if (isLoadingMore || tableData.length >= totalRecords) {
-			console.log("Load more skipped:", {
-				isLoadingMore,
-				tableLength: tableData.length,
-				totalRecords,
-				reason: isLoadingMore ? "Already loading" : "All data loaded"
-			});
-			return;
-		}
-
-		console.log("🚀 Loading more data...", {
-			currentLength: tableData.length,
-			totalRecords,
-			nextPage: Math.ceil(tableData.length / 10) + 1
-		});
-
-		setIsLoadingMore(true);
-		setLoadingProgress(0);
-
-
-
-		// Progress simulation
-		const progressInterval = setInterval(() => {
-			setLoadingProgress(prev => {
-				if (prev >= 90) {
-					clearInterval(progressInterval);
-					return 90;
-				}
-				return prev + Math.random() * 20;
-			});
-		}, 100);
-
-		try {
-			// 🔥 Calculate next page more accurately
-			const currentPage = Math.floor(tableData.length / 10) + 1;
-
-			console.log(`📡 Fetching page ${currentPage} with limit 10...`);
-
-			// const response = await getHighOrderValue({
-			// 	leadStatus: filters.leadStatus,
-			// 	page: currentPage,
-			// 	limit: 10,
-			// 	department: filters.dept,
-			// 	searchString: filters.searchString,
-			// 	date: filters.date,
-			// 	unit: filters.unit,
-			// 	campaign: filters.campaign,
-			// 	call_status: filters.call_status
-			// });
-
-			const response = await getCampaignsList({
-				leadStatus: filters.leadStatus,
-				page: currentPage,
-				limit: 10,
-				searchString: filters.searchString || '',
-				unit: filters.unit || 'ALL',
-				department: filters.dept || 'ALL',
-				category: 'ALL',
-				source: filters.source || 'ALL'
-			});
-
-
-			if (response.success && response.data?.data) {
-				const newRecords = response.data.data;
-				console.log("✅ New data received:", {
-					recordCount: newRecords.length,
-					totalAvailable: response.data.totalRecords
-				});
-
-				setLoadingProgress(100);
-
-				setTimeout(() => {
-					setTableData(prev => {
-						// 🔥 Prevent duplicate records
-						const existingIds = new Set(prev.map(item => `${item.patientId}_${item.prescriptionId}`));
-						const uniqueNewRecords = newRecords.filter(
-							(record: any) => !existingIds.has(`${record.patientId}_${record.prescriptionId}`)
-						);
-
-						const newData = [...prev, ...uniqueNewRecords];
-						console.log("📊 Data updated:", {
-							previous: prev.length,
-							newUnique: uniqueNewRecords.length,
-							total: newData.length,
-							totalRecords: response.data.totalRecords
-						});
-
-						return newData;
-					});
-
-					// 🔥 Update total records if it changed
-					if (response.data.totalRecords !== totalRecords) {
-						setTotalRecords(response.data.totalRecords);
-					}
-
-					setTimeout(() => setLoadingProgress(0), 500);
-				}, 300);
-			} else {
-				console.error("❌ API Error:", response.message);
-				clearInterval(progressInterval);
-				setLoadingProgress(0);
-			}
-		} catch (error) {
-			console.error("❌ Network Error:", error);
-			clearInterval(progressInterval);
-			setLoadingProgress(0);
-		} finally {
-			setTimeout(() => {
-				setIsLoadingMore(false);
-			}, 800);
-		}
-	}, [isLoadingMore, tableData.length, totalRecords, filters]);
-
-	// Set up WebSocket event listeners
-	React.useEffect(() => {
-		console.log('Setting up WebSocket event listeners...');
-		// Listen for knowlarity events
-		on('knowlarityEvent', (message: WebSocketMessage) => {
-			console.log('Knowlarity event received:', message);
-			handleKnowlarityEvent(message.data.event || message.data);
-		});
-
-		// Test connection after a delay
-		const testConnection = setTimeout(() => {
-			if (!isConnected) {
-				console.warn('WebSocket not connected after 5 seconds. Check if the server is running.');
-				console.log('Expected URL:', `${process.env.NEXT_PUBLIC_PRESCRIPTION_SERVICE_URL || 'http://localhost:4020'}/calleragent`);
-			} else {
-				console.log('WebSocket is connected and ready for real-time updates');
-			}
-		}, 5000);
-
-		return () => clearTimeout(testConnection);
-	}, [on, isConnected]);
-
-	// Effect to reset page when filters change
-	React.useEffect(() => {
-		setPageNumberClicked(1);
-		setItemSelected([]);
-	}, [filters.leadStatus, filters.dept, filters.searchString, filters.date, filters.unit]);
-
-	// Effect to fetch high value order when filters, page, or page size change
-	React.useEffect(() => {
-		getHighOrderValueData(false); // Don't preserve scroll on initial load or filter changes
-		getCampaignNumbersData();
-	}, [filters, pageNumberClicked, pageSize]);
-
-	React.useEffect(() => {
-		const _agentNumber = getCookie("agent_number")
-		if (_agentNumber) {
-			setAgentNumber(_agentNumber);
-		} else {
-			setAgentModal(true);
-		}
-	}, [agentNumber])
-
-	// Clean up timeouts on component unmount
-	React.useEffect(() => {
-		return () => {
-			// Clean up debounce timeout
-			if (debounceTimeoutRef.current) {
-				clearTimeout(debounceTimeoutRef.current);
-			}
-
-			// Clean up all auto-close timeouts
-			autoCloseTimeoutRef.current.forEach((timeout) => {
-				clearTimeout(timeout);
-			});
-			autoCloseTimeoutRef.current.clear();
-
-			// Clear processed calls
-			processedCallsRef.current.clear();
-		};
-	}, []);
-
-	return (
-		<>
-			{/* 🔥 Add loading progress indicator */}
-			{isLoadingMore && (
-				<Box
-					sx={{
-						position: 'fixed',
-						top: 0,
-						left: 0,
-						right: 0,
-						height: 3,
-						zIndex: 9999,
-						background: `linear-gradient(90deg, 
-              transparent 0%, 
-              #1976d2 ${loadingProgress}%, 
-              transparent ${loadingProgress + 10}%
-            )`,
-						animation: 'shimmer 1.5s ease-in-out infinite',
-						'@keyframes shimmer': {
-							'0%': { backgroundPosition: '-100px 0' },
-							'100%': { backgroundPosition: 'calc(100% + 100px) 0' }
-						}
-					}}
-				/>
-			)}
-
-			<AgentModal agentModal={agentModal} setAgentModal={setAgentModal} setAgentNumber={setAgentNumber} handleAgentNumber={handleAgentNumber} />
-
-			<Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-				{/* WebSocket Connection Status */}
-				{/* <Box sx={{ display: "flex", alignItems: "center", gap: 1, ml: 1 }}>
-					<Box
-						sx={{
-							width: 8,
-							height: 8,
-							borderRadius: '50%',
-							backgroundColor: isConnected ? 'success.main' : 'error.main',
-							animation: isConnected ? 'pulse 2s infinite' : 'none',
-							'@keyframes pulse': {
-								'0%': { opacity: 1 },
-								'50%': { opacity: 0.5 },
-								'100%': { opacity: 1 },
-							},
-						}}
-					/>
-					<Typography variant="caption" sx={{ color: isConnected ? 'success.main' : 'error.main' }}>
-						{isConnected ? 'Online' : 'Offline'}
-					</Typography>
-				</Box> */}
-			</Box>
-
-			<Box
-				sx={{
-					bgcolor: theme.palette.primary.light,
-					display: "flex",
-					height: "100%"
-				}}
-			>
-				<PageContainer>
-					<Box
-						sx={{
-							display: "flex",
-							alignItems: "flex-start",
-							justifyContent: "flex-start",
-						}}
-					>
-						<React.Fragment>
-							<CampaignsList
-								selected={itemSelected}
-								setItemSelected={setItemSelected}
-								tableData={tableDataWithKey}
-								isLoading={isLoading}
-								agentNumber={agentNumber}
-								campaignNumbers={campaignNumbers}
-								pageNumberClicked={pageNumberClicked}
-								setPageNumberClicked={(page: number) => setPageNumberClicked(page)}
-								recordsToShow={pageSize}
-								setRecordsToShow={(ps: number) => setPageSize(ps)}
-								totalRecords={totalRecords}
-								setTotalRecords={setTotalRecords}
-								getConversionPendingData={''}
-								handleCloseLead={handleCloseLead}
-								handleCaptureResponse={handleCaptureResponse}
-								tab={tab}
-								onLoadMore={handleLoadMore}
-								onScrollHandlersReady={handleScrollHandlersReady} // 🔥 Add this prop
-							/>
-						</React.Fragment>
-
-						<Modal
-							open={closeLeadModal}
-							onClose={closingCloseLeadModal}
-							sx={modalStyles}
-						>
-							<Box sx={modalContainerStyles}>
-								{/* Warning Icon */}
-								<Box sx={{
-									...iconContainerStyles,
-									backgroundColor: "rgba(255, 152, 0, 0.1)",
-									border: "2px solid",
-									borderColor: "warning.main"
-								}}>
-									<ErrorOutlineIcon sx={{ color: "warning.main", fontSize: "1.5rem" }} />
-								</Box>
-
-								<Typography variant="subtitle1" fontWeight={600} color="text.primary" sx={{ mb: 1 }}>
-									Confirm Lead Closure
-								</Typography>
-
-								<Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.4 }}>
-									Are you sure you want to close this lead? This action cannot be undone.
-								</Typography>
-
-								<Box display="flex" justifyContent="center" gap={1.5} sx={{ width: "100%" }}>
-									<Button
-										onClick={closingCloseLeadModal}
-										variant="outlined"
-										sx={{
-											...secondaryButtonStyles,
-											borderColor: "grey.400",
-											color: "text.secondary",
-											'&:hover': {
-												borderColor: "grey.600",
-												backgroundColor: "grey.50"
-											}
-										}}
-									>
-										Cancel
-									</Button>
-									<Button
-										onClick={() => handleConfirmCloseLead(rowDataCL)}
-										variant="contained"
-										sx={{
-											...primaryButtonStyles,
-											backgroundColor: "warning.main",
-											'&:hover': {
-												backgroundColor: "warning.dark"
-											}
-										}}
-									>
-										Close Lead
-									</Button>
-								</Box>
-							</Box>
-						</Modal>
-
-						{/* Unified Success/DND Modal */}
-						<Modal
-							open={successMsgModal}
-							onClose={() => setSuccessMsgModal(false)}
-							sx={modalStyles}
-						>
-							<Box sx={modalContainerStyles}>
-								{/* Dynamic Icon */}
-								<Box
-									sx={{
-										...iconContainerStyles,
-										backgroundColor:
-											modalType === "dnd"
-												? "rgba(244, 67, 54, 0.1)"
-												: modalType === "capture" || modalType === "close"
-													? "rgba(76, 175, 80, 0.1)"
-													: "rgba(33, 150, 243, 0.1)",
-										border: "2px solid",
-										borderColor:
-											modalType === "dnd"
-												? "error.main"
-												: modalType === "capture" || modalType === "close"
-													? "success.main"
-													: "info.main",
-									}}
-								>
-									{modalType === "dnd" ? (
-										<WarningAmberIcon sx={{ color: "error.main", fontSize: "1.5rem" }} />
-									) : (
-										<CheckCircleOutlineIcon sx={{ color: "success.main", fontSize: "1.5rem" }} />
-									)}
-								</Box>
-
-								{modalType === "close" && (
-									<>
-										<Typography variant="subtitle1" fontWeight={600} color="success.main" sx={{ mb: 1 }}>
-											Lead Closed Successfully!
-										</Typography>
-										<Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.4 }}>
-											The lead has been closed and saved in the system.
-										</Typography>
-									</>
-								)}
-
-								{modalType === "capture" && (
-									<>
-										<Typography variant="h6" fontWeight="bold" color="success.main">
-											Response Captured Successfully!
-										</Typography>
-										<Typography variant="body2" color="text.secondary">
-											The patient’s response has been recorded.
-										</Typography>
-									</>
-								)}
-
-								{modalType === "dnd" && (
-									<>
-										<Typography variant="subtitle1" fontWeight={600} color="error.main" sx={{ mb: 1 }}>
-											DND Enabled!
-										</Typography>
-										<Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.4 }}>
-											DND has been enabled for patient {rowDataCR?.patientId}.
-										</Typography>
-									</>
-								)}
-
-								<Button
-									onClick={() => setSuccessMsgModal(false)}
-									variant="contained"
-									sx={{
-										...primaryButtonStyles,
-										mt: 1.5,
-										backgroundColor: modalType === "dnd" ? "error.main" : "success.main",
-										'&:hover': {
-											backgroundColor: modalType === "dnd" ? "error.dark" : "success.dark",
-										}
-									}}
-								>
-									OK
-								</Button>
-							</Box>
-						</Modal>
-
-						{/* Capture Response */}
-						<DispositionFormCA
-							open={captureResponseModal}
-							onClose={() => closingCaptureResponseModal(rowDataCR)}
-							handleSubmitCapture={handleSubmitCaptureResponse}
-							rowData={rowDataCR} />
-					</Box>
-				</PageContainer>
-			</Box>
-		</>
-	);
-};
-
-export default Campaigns;
-
-
+// Refactored ScrollableTable - Production Ready
 import * as React from "react";
 import ReactDOMServer from "react-dom/server";
 import {
@@ -1028,10 +33,16 @@ const ScrollableTable = (props: PaginatedTableProps) => {
 
   // Infinite scroll state
   const [visibleCount, setVisibleCount] = React.useState(10);
-  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
-  const [showScrollIndicator, setShowScrollIndicator] = React.useState(false);
+  const [isLocalLoading, setIsLocalLoading] = React.useState(false);
+  
+  // Refs
+  const isMountedRef = React.useRef(true);
   const loaderRef = React.useRef<HTMLDivElement | null>(null);
   const tableContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const observerRef = React.useRef<IntersectionObserver | null>(null);
+  const scrollPositionRef = React.useRef<number>(0);
+  const isLoadingRef = React.useRef<boolean>(false);
+  const lastLoadTimeRef = React.useRef<number>(0);
 
   const router = useRouter();
   const { locale } = router;
@@ -1058,13 +69,46 @@ const ScrollableTable = (props: PaginatedTableProps) => {
     viewlabel,
     coloumnNumber,
     agentNumber,
-    // Add these new props for infinite scroll
     hasMore = false,
     onLoadMore,
     totalLength,
+    isLoadingMore = false,
+    onScrollPositionChange,
   } = props;
 
   const lengthOfData = rows?.length || 0;
+
+  // Save and restore scroll position functions
+  const saveScrollPosition = React.useCallback(() => {
+    if (tableContainerRef.current) {
+      scrollPositionRef.current = tableContainerRef.current.scrollTop;
+      console.log('Scroll position saved:', scrollPositionRef.current);
+    }
+  }, []);
+
+  const restoreScrollPosition = React.useCallback(() => {
+    if (tableContainerRef.current && scrollPositionRef.current > 0) {
+      // Use RAF for smooth restoration after DOM updates
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (tableContainerRef.current) {
+            tableContainerRef.current.scrollTop = scrollPositionRef.current;
+            console.log('Scroll position restored:', scrollPositionRef.current);
+          }
+        });
+      });
+    }
+  }, []);
+
+  // Expose scroll handlers to parent
+  React.useEffect(() => {
+    if (onScrollPositionChange) {
+      onScrollPositionChange({
+        saveScrollPosition,
+        restoreScrollPosition
+      });
+    }
+  }, [onScrollPositionChange, saveScrollPosition, restoreScrollPosition]);
 
   const handleToggleExpand = (rowId: string) => {
     setExpandedRowId(prev => (prev === rowId ? null : rowId));
@@ -1078,7 +122,7 @@ const ScrollableTable = (props: PaginatedTableProps) => {
         (serialNo ? 1 : 0) +
         (expandIconAt === "start" ? 1 : 0)
     );
-  }, [showTotal]);
+  }, [showTotal, selectable, serialNo, expandIconAt]);
 
   // External order props
   React.useEffect(() => {
@@ -1102,9 +146,10 @@ const ScrollableTable = (props: PaginatedTableProps) => {
       );
       setHtmlTable(htmlTableSample);
     }
-  }, [rows, headCells]);
+  }, [rows, headCells, uniqueKey, tableTitle]);
 
   const base64 = (s: any) => window.btoa(unescape(encodeURIComponent(s)));
+  
   React.useEffect(() => {
     if (isPrintClicked) {
       const printWindow = window.open("", "", "width=800,height=600");
@@ -1114,10 +159,11 @@ const ScrollableTable = (props: PaginatedTableProps) => {
         setTimeout(() => {
           printWindow.focus();
           printWindow.print();
+          setPrintClicked(false);
         }, 500);
       }
     }
-  }, [isPrintClicked]);
+  }, [isPrintClicked, htmlTable]);
 
   React.useEffect(() => {
     if (isExcelClicked) {
@@ -1131,15 +177,18 @@ const ScrollableTable = (props: PaginatedTableProps) => {
       a.href = uri + base64(template);
       a.download = `${excelFileName}.xls`;
       a.click();
+      setExcelClicked(false);
     }
-  }, [isExcelClicked]);
+  }, [isExcelClicked, htmlTable, excelFileName]);
 
-  const print = () => setPrintClicked(true);
-  const exportToExcel = () => setExcelClicked(true);
+  const print = React.useCallback(() => setPrintClicked(true), []);
+  const exportToExcel = React.useCallback(() => setExcelClicked(true), []);
 
   React.useEffect(() => {
-    if (tableRef) tableRef.current = { print, exportToExcel };
-  }, []);
+    if (tableRef) {
+      tableRef.current = { print, exportToExcel };
+    }
+  }, [tableRef, print, exportToExcel]);
 
   const handleRequestSort = (
     event: React.MouseEvent<unknown>,
@@ -1180,164 +229,178 @@ const ScrollableTable = (props: PaginatedTableProps) => {
 
   const isSelected = (name: string) => selected.includes(name);
 
-  // 🔥 Enhanced infinite scroll effect with better data fetching logic
-  React.useEffect(() => {
-    if (typeof window !== "undefined" && "IntersectionObserver" in window && onLoadMore) {
-      const observer = new window.IntersectionObserver(
-        (entries) => {
-          const target = entries[0];
-          // 🔥 Add additional check to prevent multiple calls
-          if (target.isIntersecting && !isLoadingMore && !showScrollIndicator) {
-            const canShowMore = visibleCount < rows.length;
-            const canFetchMore = rows.length < totalLength && hasMore;
-            
-            if (!canShowMore && !canFetchMore) {
-              return; // Nothing to do
-            }
-            
-            console.log("🔄 Intersection triggered:", { canShowMore, canFetchMore, visibleCount, rowsLength: rows.length, totalLength });
-            
-            if (canShowMore) {
-              // Show more existing data - this works fine
-              console.log(`📋 Showing more existing data: ${visibleCount} -> ${Math.min(visibleCount + 10, rows.length)}`);
-              
-              setIsLoadingMore(true);
-              setShowScrollIndicator(true);
-              
-              setTimeout(() => {
-                setVisibleCount(prev => {
-                  const newCount = Math.min(prev + 10, rows.length);
-                  
-                  // Only trigger server fetch when we've shown ALL loaded data
-                  if (newCount >= rows.length && rows.length < totalLength && hasMore) {
-                    console.log("📡 All loaded data shown, triggering server fetch");
-                    // 🔥 KEY FIX: Reset loading states BEFORE calling onLoadMore
-                    setTimeout(() => {
-                      setIsLoadingMore(false);
-                      setShowScrollIndicator(false);
-                      onLoadMore?.();
-                    }, 100);
-                  } else {
-                    setIsLoadingMore(false);
-                    setShowScrollIndicator(false);
-                  }
-                  
-                  return newCount;
-                });
-              }, 150);
-              
-            } else if (canFetchMore) {
-              // 🔥 KEY FIX: Don't manage isLoadingMore here - let parent handle it
-              console.log(`📡 Calling onLoadMore for server fetch: ${rows.length}/${totalLength}`);
-              setShowScrollIndicator(true);
-              
-              // 🔥 Call onLoadMore immediately without setting isLoadingMore
-              onLoadMore?.();
-              
-              // 🔥 Only manage the scroll indicator, not isLoadingMore
-              setTimeout(() => {
-                setShowScrollIndicator(false);
-              }, 1000);
-            }
-          }
-        },
-        { 
-          threshold: 0.1,
-          rootMargin: '50px'
-        }
-      );
-
-      if (loaderRef.current) {
-        observer.observe(loaderRef.current);
-      }
-
-      return () => {
-        observer.disconnect();
-      };
+  // Enhanced load more handler with proper debouncing
+  const handleLoadMoreData = React.useCallback(() => {
+    // Prevent multiple simultaneous loads
+    if (isLoadingRef.current || isLoadingMore) {
+      console.log('Load blocked: already loading');
+      return;
     }
-  }, [rows.length, visibleCount, isLoadingMore, hasMore, onLoadMore, totalLength, showScrollIndicator]);
 
-  // 🔥 Reset visible count when new data is loaded
+    const now = Date.now();
+    // Throttle requests to once per second
+    if (now - lastLoadTimeRef.current < 1000) {
+      console.log('Load blocked: throttled');
+      return;
+    }
+
+    const canShowMore = visibleCount < rows.length;
+    const canFetchMore = rows.length < totalLength && hasMore && onLoadMore;
+
+    if (!canShowMore && !canFetchMore) {
+      console.log('Load blocked: no more data');
+      return;
+    }
+
+    console.log('Loading more:', { canShowMore, canFetchMore, visibleCount, rowsLength: rows.length });
+
+    if (canShowMore) {
+      // Show more existing data
+      isLoadingRef.current = true;
+      setIsLocalLoading(true);
+      lastLoadTimeRef.current = now;
+
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setVisibleCount(prev => {
+            const newCount = Math.min(prev + 10, rows.length);
+            
+            // Only trigger server fetch when ALL loaded data is shown
+            if (newCount >= rows.length && rows.length < totalLength && hasMore && onLoadMore) {
+              console.log('All data shown, triggering server fetch');
+              setTimeout(() => {
+                if (isMountedRef.current && !isLoadingMore) {
+                  onLoadMore();
+                }
+              }, 100);
+            }
+            
+            return newCount;
+          });
+          
+          setIsLocalLoading(false);
+          isLoadingRef.current = false;
+        }
+      }, 200);
+    } else if (canFetchMore) {
+      // Trigger server fetch
+      console.log('Triggering server fetch');
+      isLoadingRef.current = true;
+      lastLoadTimeRef.current = now;
+      onLoadMore();
+      
+      // Reset loading flag after delay
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          isLoadingRef.current = false;
+        }
+      }, 1000);
+    }
+  }, [visibleCount, rows.length, totalLength, hasMore, onLoadMore, isLoadingMore]);
+
+  // Enhanced intersection observer with proper cleanup
   React.useEffect(() => {
-    if (rows.length > 0 && visibleCount > rows.length) {
-      console.log(`Adjusting visible count from ${visibleCount} to ${rows.length} based on loaded data`);
-      setVisibleCount(rows.length);
+    // Clean up existing observer
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+
+    if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
+      return;
+    }
+
+    if (!loaderRef.current || !onLoadMore) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const target = entries[0];
+        if (target.isIntersecting && isMountedRef.current) {
+          handleLoadMoreData();
+        }
+      },
+      { 
+        threshold: 0.1,
+        rootMargin: '100px'
+      }
+    );
+
+    observerRef.current = observer;
+    observer.observe(loaderRef.current);
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+    };
+  }, [handleLoadMoreData, onLoadMore]);
+
+  // Reset visible count when filters change (rows reset)
+  React.useEffect(() => {
+    if (rows.length > 0 && rows.length < visibleCount) {
+      console.log('Resetting visible count to match new data');
+      setVisibleCount(Math.min(10, rows.length));
+      isLoadingRef.current = false;
     }
   }, [rows.length]);
 
-  const visibleRows = stableSort(rows, getComparator(order, orderBy)).slice(
-    0,
-    visibleCount
-  );
-
-  // 🔥 Add scroll position preservation
-  const scrollPositionRef = React.useRef<number>(0);
-  const shouldPreserveScrollRef = React.useRef<boolean>(false);
-  
-  // Save scroll position before data updates
-  const saveScrollPosition = React.useCallback(() => {
-    if (tableContainerRef.current) {
-      scrollPositionRef.current = tableContainerRef.current.scrollTop;
-      shouldPreserveScrollRef.current = true;
-      console.log('📍 Scroll position saved:', scrollPositionRef.current);
-    }
-  }, []);
-
-  // Restore scroll position after data updates
-  const restoreScrollPosition = React.useCallback(() => {
-    if (shouldPreserveScrollRef.current && tableContainerRef.current) {
-      const savedPosition = scrollPositionRef.current;
-      
-      // Use requestAnimationFrame to ensure DOM is updated
-      requestAnimationFrame(() => {
-        if (tableContainerRef.current) {
-          tableContainerRef.current.scrollTop = savedPosition;
-          console.log('📍 Scroll position restored:', savedPosition);
-          shouldPreserveScrollRef.current = false;
-        }
-      });
-    }
-  }, []);
-
-  // 🔥 Expose scroll position methods via props
+  // Auto-adjust visible count when new data loads
   React.useEffect(() => {
-    if (props.onScrollPositionChange) {
-      props.onScrollPositionChange({
-        saveScrollPosition,
-        restoreScrollPosition
-      });
+    if (rows.length > visibleCount && !isLoadingMore) {
+      // New data was loaded, adjust visible count
+      const newVisible = Math.min(visibleCount + 10, rows.length);
+      if (newVisible !== visibleCount) {
+        console.log('Auto-adjusting visible count:', newVisible);
+        setVisibleCount(newVisible);
+      }
     }
-  }, [saveScrollPosition, restoreScrollPosition, props.onScrollPositionChange]);
+  }, [rows.length, isLoadingMore]);
 
-  // 🔥 Monitor scroll position changes
+  // Handle scroll events
   const handleScroll = React.useCallback((event: React.UIEvent<HTMLDivElement>) => {
     const target = event.currentTarget;
     scrollPositionRef.current = target.scrollTop;
   }, []);
 
-  // 🔥 Restore scroll position when rows change (but not during initial load)
+  // Restore scroll after data changes
   React.useEffect(() => {
-    if (rows.length > 0 && shouldPreserveScrollRef.current) {
-      // Small delay to ensure DOM is fully rendered
-      const timeoutId = setTimeout(() => {
-        restoreScrollPosition();
-      }, 50);
-      
-      return () => clearTimeout(timeoutId);
+    if (scrollPositionRef.current > 0 && !loading && !isLoadingMore) {
+      restoreScrollPosition();
     }
-  }, [rows, restoreScrollPosition]);
+  }, [rows.length, loading, isLoadingMore, restoreScrollPosition]);
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, []);
+
+  const visibleRows = React.useMemo(
+    () => stableSort(rows, getComparator(order, orderBy)).slice(0, visibleCount),
+    [rows, order, orderBy, visibleCount]
+  );
+
+  const showLoadingIndicator = isLoadingMore || isLocalLoading;
+  const canLoadMore = visibleCount < rows.length || (hasMore && rows.length < totalLength);
 
   return (
     <Box sx={{ width: "100%", position: 'relative' }}>
-      {/* 🔥 Add smooth scroll indicator */}
-      {showScrollIndicator && (
+      {/* Loading progress bar */}
+      {showLoadingIndicator && (
         <Box
           sx={{
             position: 'absolute',
             top: 0,
             left: 0,
             right: 0,
-            height: 4,
+            height: 3,
             zIndex: 1000,
             background: 'linear-gradient(90deg, transparent, #1976d2, transparent)',
             animation: 'slideProgress 1.5s ease-in-out infinite',
@@ -1361,30 +424,22 @@ const ScrollableTable = (props: PaginatedTableProps) => {
       >
         <TableContainer 
           ref={tableContainerRef}
-          onScroll={handleScroll} // 🔥 Add scroll handler
+          onScroll={handleScroll}
           sx={{ 
             maxHeight: '70vh', 
             overflow: 'auto',
-            scrollBehavior: 'auto', // 🔥 Changed from 'smooth' to 'auto' for position restoration
+            scrollBehavior: 'auto',
             position: 'relative',
-            '&::-webkit-scrollbar': {
-              width: '8px',
-            },
-            '&::-webkit-scrollbar-track': {
-              background: '#f1f1f1',
+            '&::-webkit-scrollbar': { width: '8px' },
+            '&::-webkit-scrollbar-track': { background: '#f1f1f1', borderRadius: '4px' },
+            '&::-webkit-scrollbar-thumb': { 
+              background: '#c1c1c1', 
               borderRadius: '4px',
-            },
-            '&::-webkit-scrollbar-thumb': {
-              background: '#c1c1c1',
-              borderRadius: '4px',
-              '&:hover': {
-                background: '#a8a8a8',
-              }
+              '&:hover': { background: '#a8a8a8' }
             }
           }}
         >
           <Table sx={{ minWidth: 750 }} size="small" stickyHeader>
-            {/* 🔥 Enhanced table header with opaque background */}
             <EnhancedTableHead
               order={order}
               orderBy={orderBy}
@@ -1399,36 +454,36 @@ const ScrollableTable = (props: PaginatedTableProps) => {
               viewlabel={viewlabel}
               sx={{
                 '& .MuiTableCell-head': {
-                  backgroundColor: '#ffffff', // 🔥 Opaque white background
-                  backdropFilter: 'blur(10px)', // 🔥 Add blur effect for better visibility
+                  backgroundColor: '#ffffff',
+                  backdropFilter: 'blur(10px)',
                   borderBottom: '2px solid #e0e0e0',
                   fontWeight: 600,
                   fontSize: '0.875rem',
                   color: 'text.primary',
                   position: 'sticky',
                   top: 0,
-                  zIndex: 1100, // 🔥 Higher z-index to stay above content
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)', // 🔥 Add shadow for depth
+                  zIndex: 1100,
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                 }
               }}
             />
             <TableBody>
-              {/* 🔥 Enhanced record counter with opaque background */}
+              {/* Record counter */}
               <TableRow>
                 <TableCell 
                   colSpan={headCells.length + (serialNo ? 1 : 0) + (selectable ? 1 : 0)} 
                   sx={{ 
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)', // 🔥 More opaque background
-                    backdropFilter: 'blur(8px)', // 🔥 Add blur for better visibility
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(8px)',
                     fontWeight: 500,
                     fontSize: '0.875rem',
                     textAlign: 'center',
                     padding: '12px',
                     borderBottom: '2px solid rgba(25, 118, 210, 0.1)',
                     position: 'sticky',
-                    top: 56, // 🔥 Stick below header
-                    zIndex: 1000, // 🔥 High z-index
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)', // 🔥 Subtle shadow
+                    top: 56,
+                    zIndex: 1000,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                   }}
                 >
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1442,8 +497,7 @@ const ScrollableTable = (props: PaginatedTableProps) => {
                 </TableCell>
               </TableRow>
 
-
-
+              {/* Table rows */}
               {visibleRows.map((row, index) => {
                 const isItemSelected = isSelected(row[uniqueKey]?.toString());
                 return expandable ? (
@@ -1518,8 +572,8 @@ const ScrollableTable = (props: PaginatedTableProps) => {
                 );
               })}
 
-              {/* 🔥 Update loading condition */}
-              {(isLoadingMore || showScrollIndicator) && (
+              {/* Loading indicator */}
+              {showLoadingIndicator && (
                 <TableRow>
                   <TableCell colSpan={headCells.length + (serialNo ? 1 : 0) + (selectable ? 1 : 0)} align="center">
                     <Box sx={{ 
@@ -1531,109 +585,24 @@ const ScrollableTable = (props: PaginatedTableProps) => {
                       background: 'linear-gradient(135deg, rgba(25, 118, 210, 0.05) 0%, rgba(25, 118, 210, 0.02) 100%)',
                       borderRadius: 2,
                       margin: 1,
-                      animation: 'fadeInUp 0.3s ease-out',
-                      '@keyframes fadeInUp': {
-                        '0%': { opacity: 0, transform: 'translateY(20px)' },
-                        '100%': { opacity: 1, transform: 'translateY(0)' }
-                      }
                     }}>
-                      <Box
-                        sx={{
-                          position: 'relative',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        <CircularProgress 
-                          size={32} 
-                          thickness={3}
-                          sx={{
-                            color: 'primary.main',
-                            animation: 'spin 1s linear infinite',
-                            '@keyframes spin': {
-                              '0%': { transform: 'rotate(0deg)' },
-                              '100%': { transform: 'rotate(360deg)' }
-                            }
-                          }}
-                        />
-                        <Box
-                          sx={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            bottom: 0,
-                            right: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <Box
-                            sx={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: '50%',
-                              backgroundColor: 'primary.main',
-                              animation: 'pulse 1.5s ease-in-out infinite',
-                              '@keyframes pulse': {
-                                '0%': { transform: 'scale(0.8)', opacity: 0.7 },
-                                '50%': { transform: 'scale(1.2)', opacity: 1 },
-                                '100%': { transform: 'scale(0.8)', opacity: 0.7 }
-                              }
-                            }}
-                          />
-                        </Box>
-                      </Box>
-                      <Typography 
-                        variant="body2" 
-                        color="primary.main"
-                        sx={{ 
-                          fontWeight: 500,
-                          animation: 'fadeIn 0.5s ease-out 0.2s both',
-                          '@keyframes fadeIn': {
-                            '0%': { opacity: 0 },
-                            '100%': { opacity: 1 }
-                          }
-                        }}
-                      >
+                      <CircularProgress size={32} thickness={3} />
+                      <Typography variant="body2" color="primary.main" sx={{ fontWeight: 500 }}>
                         Loading next 10 records...
                       </Typography>
-                      <Box
-                        sx={{
-                          width: '60px',
-                          height: '2px',
-                          backgroundColor: 'primary.main',
-                          borderRadius: '1px',
-                          animation: 'expand 1.5s ease-in-out infinite',
-                          '@keyframes expand': {
-                            '0%': { width: '20px', opacity: 0.5 },
-                            '50%': { width: '60px', opacity: 1 },
-                            '100%': { width: '20px', opacity: 0.5 }
-                          }
-                        }}
-                      />
                     </Box>
                   </TableCell>
                 </TableRow>
               )}
 
-              {/* 🔥 Update sentinel condition - show when there are more records to display OR fetch */}
-              {((visibleCount < rows.length) || (hasMore && rows.length < totalLength)) && !isLoadingMore && !showScrollIndicator && (
+              {/* Sentinel for infinite scroll */}
+              {canLoadMore && !showLoadingIndicator && (
                 <TableRow ref={loaderRef}>
                   <TableCell 
                     colSpan={headCells.length + (serialNo ? 1 : 0) + (selectable ? 1 : 0)}
-                    sx={{ 
-                      height: '40px',
-                      background: 'linear-gradient(to bottom, transparent, rgba(25, 118, 210, 0.02), transparent)',
-                    }}
+                    sx={{ height: '40px', background: 'linear-gradient(to bottom, transparent, rgba(25, 118, 210, 0.02), transparent)' }}
                   >
-                    <Box sx={{ 
-                      display: 'flex', 
-                      justifyContent: 'center', 
-                      alignItems: 'center',
-                      opacity: 0.6
-                    }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', opacity: 0.6 }}>
                       <Typography variant="caption" color="text.secondary">
                         {visibleCount < rows.length 
                           ? `Scroll for more... (${visibleCount}/${rows.length} visible)`
@@ -1645,7 +614,7 @@ const ScrollableTable = (props: PaginatedTableProps) => {
                 </TableRow>
               )}
 
-              {/* 🔥 Enhanced "All data loaded" message - only show when all data is visible */}
+              {/* All data loaded message */}
               {visibleCount >= rows.length && visibleCount >= totalLength && rows.length >= totalLength && (
                 <TableRow>
                   <TableCell colSpan={headCells.length + (serialNo ? 1 : 0) + (selectable ? 1 : 0)} align="center">
@@ -1658,43 +627,22 @@ const ScrollableTable = (props: PaginatedTableProps) => {
                       background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.05) 0%, rgba(76, 175, 80, 0.02) 100%)',
                       borderRadius: 2,
                       margin: 1,
-                      animation: 'slideUp 0.5s ease-out',
-                      '@keyframes slideUp': {
-                        '0%': { opacity: 0, transform: 'translateY(30px)' },
-                        '100%': { opacity: 1, transform: 'translateY(0)' }
-                      }
                     }}>
-                      <Box
-                        sx={{
-                          width: 48,
-                          height: 48,
-                          borderRadius: '50%',
-                          backgroundColor: 'success.main',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          animation: 'checkmark 0.6s ease-out 0.3s both',
-                          '@keyframes checkmark': {
-                            '0%': { transform: 'scale(0)', opacity: 0 },
-                            '50%': { transform: 'scale(1.2)', opacity: 0.8 },
-                            '100%': { transform: 'scale(1)', opacity: 1 }
-                          }
-                        }}
-                      >
+                      <Box sx={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: '50%',
+                        backgroundColor: 'success.main',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}>
                         <Typography sx={{ color: 'white', fontSize: '1.5rem' }}>✓</Typography>
                       </Box>
-                      <Typography 
-                        variant="subtitle1" 
-                        color="success.main"
-                        sx={{ fontWeight: 600 }}
-                      >
+                      <Typography variant="subtitle1" color="success.main" sx={{ fontWeight: 600 }}>
                         All records loaded successfully!
                       </Typography>
-                      <Typography 
-                        variant="body2" 
-                        color="text.secondary"
-                        sx={{ textAlign: 'center' }}
-                      >
+                      <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
                         You've viewed all {totalLength} records
                       </Typography>
                     </Box>
@@ -1702,7 +650,7 @@ const ScrollableTable = (props: PaginatedTableProps) => {
                 </TableRow>
               )}
 
-              {/* No data row */}
+              {/* No data */}
               {!loading && lengthOfData <= 0 && (
                 <TableRow style={{ height: 53 * 5 }}>
                   <TableCell colSpan={headCells.length} sx={{ textAlign: "center" }}>
@@ -1711,7 +659,7 @@ const ScrollableTable = (props: PaginatedTableProps) => {
                 </TableRow>
               )}
 
-              {/* Loading spinner row */}
+              {/* Initial loading */}
               {loading && rows.length <= 0 && (
                 <TableRow sx={{ height: 53 * 3 }}>
                   <TableCell
@@ -1723,6 +671,7 @@ const ScrollableTable = (props: PaginatedTableProps) => {
                 </TableRow>
               )}
 
+              {/* Total row */}
               {showTotal && (
                 <TableRow>
                   <TableCell colSpan={totalColSpan} sx={{ pt: "1rem", pb: "1rem" }}>
@@ -1762,3 +711,816 @@ ScrollableTable.defaultProps = {
 };
 
 export default ScrollableTable;
+
+
+// Refactored Campaigns Component - Production Ready
+import theme from "@/theme";
+import {
+  Box, Button, Modal, Typography
+} from "@mui/material";
+import React from "react";
+import CampaignsList from "./CampaignsList";
+import DispositionFormCA from "./DispositionFormCA";
+import { handleApiError } from "@/utils/handleApiError";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import { useWebSocket } from "@/hooks/useWebSocket";
+import PageContainer from "ui/common/containers/PageContainer";
+import { 
+  getCampaignNumbers, 
+  getCampaignsList, 
+  hightOrderCaptureResponse, 
+  unlockCallCenterOrder 
+} from "@/modules";
+import { getCookie, setCookie } from "cookies-next";
+import AgentModal from "./CallerAgent/AgentModal";
+
+// Interfaces
+interface WebSocketMessage {
+  type: string;
+  data: any;
+  timestamp: string;
+}
+
+interface DepartmentData {
+  id: string;
+  patientId: string;
+  prescriptionId: string;
+  patientName?: string;
+  phoneNumber?: string;
+  leadStatus?: string;
+  department?: string;
+  unit?: string;
+  agent_number?: string;
+  call_status?: string;
+  [key: string]: any;
+}
+
+interface CallIdentifier {
+  patientId: string;
+  prescriptionId: string;
+  customerNumber: string;
+  timestamp: number;
+}
+
+// Modal Styles
+const modalStyles = {
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  p: 1,
+  zIndex: (theme: any) => theme.zIndex.modal + 10,
+};
+
+const modalContainerStyles = {
+  bgcolor: "background.paper",
+  borderRadius: 1,
+  p: 3,
+  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12)",
+  border: "1px solid",
+  borderColor: "divider",
+  textAlign: "center" as const,
+  display: "flex",
+  flexDirection: "column" as const,
+  alignItems: "center",
+  gap: 1.5,
+  minWidth: "280px",
+  maxWidth: "400px",
+  width: "90%",
+  maxHeight: "90vh",
+  overflow: "auto",
+};
+
+const iconContainerStyles = {
+  width: 48,
+  height: 48,
+  borderRadius: "50%",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  mb: 0.5,
+};
+
+const primaryButtonStyles = {
+  borderRadius: 1,
+  px: 2.5,
+  py: 0.75,
+  textTransform: "none" as const,
+  fontWeight: 500,
+  fontSize: "0.875rem",
+  minWidth: "100px",
+  height: "36px",
+};
+
+const secondaryButtonStyles = {
+  borderRadius: 1,
+  px: 2.5,
+  py: 0.75,
+  textTransform: "none" as const,
+  fontWeight: 500,
+  fontSize: "0.875rem",
+  minWidth: "100px",
+  height: "36px",
+};
+
+const Campaigns = (props: any) => {
+  const { filters, tab } = props;
+
+  // State Management
+  const [tableData, setTableData] = React.useState<DepartmentData[]>([]);
+  const [isLoading, setIsLoading] = React.useState<boolean>(false);
+  const [totalRecords, setTotalRecords] = React.useState<number>(0);
+  const [pageNumberClicked, setPageNumberClicked] = React.useState<number>(1);
+  const [pageSize, setPageSize] = React.useState<number>(10);
+  const [closeLeadModal, setCloseLeadModal] = React.useState(false);
+  const [rowDataCL, setRowDataCL] = React.useState<DepartmentData | null>(null);
+  const [captureResponseModal, setCaptureResponseModal] = React.useState(false);
+  const [rowDataCR, setRowDataCR] = React.useState<DepartmentData | null>(null);
+  const [successMsgModal, setSuccessMsgModal] = React.useState(false);
+  const [itemSelected, setItemSelected] = React.useState<string[]>([]);
+  const [agentNumber, setAgentNumber] = React.useState<string>('');
+  const [agentModal, setAgentModal] = React.useState<boolean>(false);
+  const [modalType, setModalType] = React.useState<"capture" | "close" | "dnd" | null>(null);
+  const [campaignNumbers, setCampaignNumbers] = React.useState<any>([]);
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+
+  // Refs for managing async operations
+  const isMountedRef = React.useRef(true);
+  const activeRequestRef = React.useRef<AbortController | null>(null);
+  const processedCallsRef = React.useRef<Map<string, CallIdentifier>>(new Map());
+  const autoCloseTimeoutRef = React.useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const customerNumberRef = React.useRef<string | null>(null);
+  const debounceTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const wsUnsubscribeRef = React.useRef<(() => void) | null>(null);
+  
+  // Scroll handlers
+  const scrollHandlersRef = React.useRef<{
+    saveScrollPosition: () => void;
+    restoreScrollPosition: () => void;
+  } | null>(null);
+
+  // Check if any modal is open
+  const isAnyModalOpen = React.useCallback(() => {
+    return captureResponseModal || closeLeadModal || successMsgModal || agentModal;
+  }, [captureResponseModal, closeLeadModal, successMsgModal, agentModal]);
+
+  // Enhanced data fetching with abort controller
+  const getHighOrderValueData = React.useCallback(async (preserveScroll = false) => {
+    // Skip if modal is open
+    if (isAnyModalOpen()) {
+      console.log("Skipping data refresh - modal is open");
+      return;
+    }
+
+    // Cancel previous request
+    if (activeRequestRef.current) {
+      activeRequestRef.current.abort();
+    }
+
+    // Create new abort controller
+    const abortController = new AbortController();
+    activeRequestRef.current = abortController;
+
+    // Save scroll position if needed
+    if (preserveScroll && scrollHandlersRef.current) {
+      scrollHandlersRef.current.saveScrollPosition();
+    }
+
+    setIsLoading(true);
+
+    try {
+      const response = await getCampaignsList({
+        leadStatus: filters.leadStatus || 'ALL',
+        page: pageNumberClicked,
+        limit: pageSize,
+        searchString: filters.searchString || '',
+        unit: filters.unit,
+        department: filters.dept,
+        category: 'ALL',
+        source: 'ALL'
+      });
+
+      // Check if component is still mounted and request wasn't aborted
+      if (!isMountedRef.current || abortController.signal.aborted) {
+        return;
+      }
+
+      if (response.success) {
+        setTableData(response.data?.data || []);
+        setTotalRecords(response.data?.totalRecords || 0);
+        
+        // Restore scroll position after state update
+        if (preserveScroll && scrollHandlersRef.current) {
+          setTimeout(() => {
+            scrollHandlersRef.current?.restoreScrollPosition();
+          }, 100);
+        }
+      } else {
+        console.error("API Error:", response.message);
+        handleApiError(response.message);
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Request was aborted');
+        return;
+      }
+      if (isMountedRef.current) {
+        console.error("Unexpected Error:", error);
+        handleApiError("Something went wrong while fetching data.");
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false);
+        activeRequestRef.current = null;
+      }
+    }
+  }, [filters, pageNumberClicked, pageSize, isAnyModalOpen]);
+
+  // Fetch campaign numbers
+  const getCampaignNumbersData = React.useCallback(async () => {
+    if (isAnyModalOpen()) {
+      console.log("Skipping campaign numbers fetch - modal is open");
+      return;
+    }
+
+    try {
+      const response = await getCampaignNumbers();
+
+      if (!isMountedRef.current) return;
+
+      if (response.success) {
+        setCampaignNumbers(response.data?.numbers || []);
+      } else {
+        console.error("API Error:", response.message);
+        handleApiError(response.message);
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        console.error("Unexpected Error:", error);
+        handleApiError("Something went wrong while fetching campaign numbers.");
+      }
+    }
+  }, [isAnyModalOpen]);
+
+  // Auto-close lead with deduplication
+  const handleAutomaticallyCloseLead = React.useCallback(async (
+    patientId: string, 
+    prescriptionId: string, 
+    customerNumber: string
+  ) => {
+    if (!patientId || !prescriptionId || !customerNumber) {
+      console.warn("Missing required parameters for auto-close");
+      return;
+    }
+
+    const callKey = `${patientId}_${prescriptionId}_${customerNumber}`;
+    const now = Date.now();
+    
+    // Check if we've processed this call recently (within 30 seconds)
+    const existingCall = processedCallsRef.current.get(callKey);
+    if (existingCall && (now - existingCall.timestamp) < 30000) {
+      console.log("Call already processed recently, skipping:", callKey);
+      return;
+    }
+
+    // Mark as processed
+    processedCallsRef.current.set(callKey, {
+      patientId,
+      prescriptionId,
+      customerNumber,
+      timestamp: now
+    });
+
+    // Clean up old entries (older than 60 seconds)
+    for (const [key, value] of processedCallsRef.current.entries()) {
+      if (now - value.timestamp > 60000) {
+        processedCallsRef.current.delete(key);
+      }
+    }
+
+    try {
+      const res = await hightOrderCaptureResponse({
+        comments: "Ringing No Answer and system automatically closed lead",
+        patientId,
+        prescriptionId,
+        followUpStatus: "No",
+        callDisposition: "Non-contact",
+        serviceDispositionL1: "Ringing no Response",
+        serviceDispositionL2: "",
+        dnd: false,
+        mobileNo: customerNumber,
+      });
+
+      if (isMountedRef.current && (res.success || res?.statusCode === 201)) {
+        console.log("Lead auto-closed successfully");
+        await getHighOrderValueData(true);
+      }
+    } catch (error) {
+      console.error("Error in handleAutomaticallyCloseLead:", error);
+      if (isMountedRef.current) {
+        handleApiError(error);
+      }
+    }
+  }, [getHighOrderValueData]);
+
+  // Handle knowlarity events with proper debouncing
+  const handleKnowlarityEvent = React.useCallback((eventData: any) => {
+    if (!eventData || !eventData.event_type) {
+      console.warn('Invalid knowlarity event received');
+      return;
+    }
+
+    console.log('Knowlarity event:', eventData.event_type);
+
+    try {
+      // Handle different event types
+      if (eventData?.event_type === "CUSTOMER_CALL") {
+        customerNumberRef.current = eventData?.customer_number;
+      }
+
+      if (eventData?.event_type === "CUSTOMER_ANSWER" || eventData?.event_type === "BRIDGE") {
+        if (customerNumberRef.current === eventData?.customer_number) {
+          customerNumberRef.current = null;
+        }
+      }
+
+      if (eventData?.event_type === "HANGUP") {
+        const patientId = eventData?.department?.patientId;
+        const prescriptionId = eventData?.department?.prescriptionId;
+        const customerNumber = eventData?.customer_number;
+        const callIdentifier = `${patientId}_${prescriptionId}_${customerNumber}`;
+
+        if (customerNumberRef.current === customerNumber && patientId && prescriptionId) {
+          // Clear existing timeout
+          const existingTimeout = autoCloseTimeoutRef.current.get(callIdentifier);
+          if (existingTimeout) {
+            clearTimeout(existingTimeout);
+          }
+
+          // Set new timeout with proper cleanup
+          const timeout = setTimeout(() => {
+            handleAutomaticallyCloseLead(patientId, prescriptionId, customerNumber);
+            autoCloseTimeoutRef.current.delete(callIdentifier);
+          }, 2000);
+
+          autoCloseTimeoutRef.current.set(callIdentifier, timeout);
+          customerNumberRef.current = null;
+        }
+      }
+
+      // Skip data refresh if modal is open
+      if (isAnyModalOpen()) {
+        console.log("Skipping data refresh - modal is open");
+        return;
+      }
+
+      // Debounced data refresh
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+
+      debounceTimeoutRef.current = setTimeout(() => {
+        if (!isAnyModalOpen() && isMountedRef.current) {
+          getHighOrderValueData(true);
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              getCampaignNumbersData();
+            }
+          }, 2000);
+        }
+      }, 500);
+    } catch (error) {
+      console.error('Error handling knowlarity event:', error);
+    }
+  }, [isAnyModalOpen, getHighOrderValueData, getCampaignNumbersData, handleAutomaticallyCloseLead]);
+
+  // Modal handlers
+  const handleCloseLead = React.useCallback((value: any) => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+      debounceTimeoutRef.current = null;
+    }
+    setCloseLeadModal(true);
+    setRowDataCL(value);
+  }, []);
+
+  const handleConfirmCloseLead = React.useCallback(async (rowDataCL: any) => {
+    try {
+      const res = await hightOrderCaptureResponse({
+        patientId: rowDataCL?.patientId,
+        prescriptionId: rowDataCL?.prescriptionId,
+        followUpStatus: "No"
+      });
+
+      if (isMountedRef.current && res?.statusCode === 201) {
+        await unlockCallCenterOrder({
+          patientId: rowDataCL?.patientId,
+          prescriptionId: rowDataCL?.prescriptionId,
+          name: tab,
+        });
+        await getHighOrderValueData();
+        setModalType("close");
+        setSuccessMsgModal(true);
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        handleApiError(error);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setCloseLeadModal(false);
+      }
+    }
+  }, [tab, getHighOrderValueData]);
+
+  const handleCaptureResponse = React.useCallback((value: any) => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+      debounceTimeoutRef.current = null;
+    }
+    setCaptureResponseModal(true);
+    setRowDataCR(value);
+  }, []);
+
+  const handleSubmitCaptureResponse = React.useCallback(async (
+    updatedReason: any,
+    valueFollowups: any,
+    followUpDate: any,
+    valueTime: any,
+    selectedCD: any,
+    selectedL1: any,
+    selectedL2: any,
+    additionalComment: string,
+    dnd: boolean,
+    mobileNo: string
+  ) => {
+    try {
+      const res = await hightOrderCaptureResponse({
+        comments: additionalComment,
+        patientId: rowDataCR?.patientId,
+        prescriptionId: rowDataCR?.prescriptionId,
+        orderId: rowDataCR?.orderId,
+        followUpStatus: valueFollowups,
+        ...(followUpDate && { followUpDate }),
+        callDisposition: selectedCD,
+        serviceDispositionL1: selectedL1,
+        serviceDispositionL2: selectedL2,
+        timings: valueTime?.format("hh:mm A"),
+        dnd,
+        mobileNo,
+      });
+
+      if (isMountedRef.current && (res.success || res?.statusCode === 201)) {
+        await getHighOrderValueData();
+        setCaptureResponseModal(false);
+        setModalType(dnd ? "dnd" : "capture");
+        setSuccessMsgModal(true);
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        handleApiError(error);
+      }
+    }
+  }, [rowDataCR, getHighOrderValueData]);
+
+  const closingCaptureResponseModal = React.useCallback(async (row: any) => {
+    try {
+      await unlockCallCenterOrder({
+        patientId: row?.patientId,
+        prescriptionId: row?.prescriptionId,
+        name: tab,
+      });
+      await getHighOrderValueData();
+    } catch (error) {
+      console.error("Error closing capture response modal:", error);
+      if (isMountedRef.current) {
+        handleApiError("Failed to unlock order");
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setCaptureResponseModal(false);
+      }
+    }
+  }, [tab, getHighOrderValueData]);
+
+  const closingCloseLeadModal = React.useCallback(async () => {
+    try {
+      await unlockCallCenterOrder({
+        patientId: rowDataCL?.patientId,
+        prescriptionId: rowDataCL?.prescriptionId,
+        name: tab,
+      });
+      await getHighOrderValueData();
+    } catch (error) {
+      console.error("Error closing lead modal:", error);
+      if (isMountedRef.current) {
+        handleApiError("Failed to unlock order");
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setCloseLeadModal(false);
+      }
+    }
+  }, [rowDataCL, tab, getHighOrderValueData]);
+
+  const handleAgentNumber = React.useCallback(() => {
+    setCookie("agent_number", agentNumber);
+    setAgentModal(false);
+  }, [agentNumber]);
+
+  // Load more handler with proper deduplication
+  const handleLoadMore = React.useCallback(async () => {
+    if (isLoadingMore || tableData.length >= totalRecords || isAnyModalOpen()) {
+      return;
+    }
+
+    setIsLoadingMore(true);
+
+    try {
+      const nextPage = Math.floor(tableData.length / 10) + 1;
+
+      const response = await getCampaignsList({
+        leadStatus: filters.leadStatus || 'ALL',
+        page: nextPage,
+        limit: 10,
+        searchString: filters.searchString || '',
+        unit: filters.unit || 'ALL',
+        department: filters.dept || 'ALL',
+        category: 'ALL',
+        source: filters.source || 'ALL'
+      });
+
+      if (!isMountedRef.current) return;
+
+      if (response.success && response.data?.data) {
+        const newRecords = response.data.data;
+        
+        setTableData(prev => {
+          const existingIds = new Set(
+            prev.map(item => `${item.patientId}_${item.prescriptionId}`)
+          );
+          const uniqueNewRecords = newRecords.filter(
+            (record: any) => !existingIds.has(`${record.patientId}_${record.prescriptionId}`)
+          );
+          return [...prev, ...uniqueNewRecords];
+        });
+
+        if (response.data.totalRecords !== totalRecords) {
+          setTotalRecords(response.data.totalRecords);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading more data:", error);
+      if (isMountedRef.current) {
+        handleApiError("Failed to load more data");
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setTimeout(() => setIsLoadingMore(false), 300);
+      }
+    }
+  }, [isLoadingMore, tableData.length, totalRecords, filters, isAnyModalOpen]);
+
+  const handleScrollHandlersReady = React.useCallback((handlers: any) => {
+    scrollHandlersRef.current = handlers;
+  }, []);
+
+  // WebSocket setup with proper cleanup
+  const { isConnected, on } = useWebSocket({
+    onConnect: () => console.log('Connected to CallerAgent WebSocket'),
+    onDisconnect: () => console.log('Disconnected from CallerAgent WebSocket'),
+    onError: (error) => console.error('WebSocket error:', error),
+  });
+
+  // Setup WebSocket listeners
+  React.useEffect(() => {
+    const unsubscribe = on('knowlarityEvent', (message: WebSocketMessage) => {
+      handleKnowlarityEvent(message.data.event || message.data);
+    });
+
+    wsUnsubscribeRef.current = unsubscribe;
+
+    return () => {
+      if (wsUnsubscribeRef.current) {
+        wsUnsubscribeRef.current();
+      }
+    };
+  }, [on, handleKnowlarityEvent]);
+
+  // Reset page on filter changes
+  React.useEffect(() => {
+    setPageNumberClicked(1);
+    setItemSelected([]);
+  }, [filters.leadStatus, filters.dept, filters.searchString, filters.date, filters.unit]);
+
+  // Fetch data on mount and filter/page changes
+  React.useEffect(() => {
+    getHighOrderValueData(false);
+    getCampaignNumbersData();
+  }, [filters, pageNumberClicked, pageSize]);
+
+  // Check agent number on mount
+  React.useEffect(() => {
+    const _agentNumber = getCookie("agent_number");
+    if (_agentNumber) {
+      setAgentNumber(_agentNumber as string);
+    } else {
+      setAgentModal(true);
+    }
+  }, []);
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+
+      // Abort active requests
+      if (activeRequestRef.current) {
+        activeRequestRef.current.abort();
+      }
+
+      // Clear all timeouts
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+
+      autoCloseTimeoutRef.current.forEach(timeout => clearTimeout(timeout));
+      autoCloseTimeoutRef.current.clear();
+
+      // Clear processed calls
+      processedCallsRef.current.clear();
+
+      // Unsubscribe from WebSocket
+      if (wsUnsubscribeRef.current) {
+        wsUnsubscribeRef.current();
+      }
+    };
+  }, []);
+
+  const tableDataWithKey = tableData.map((row: any) => ({
+    ...row,
+    patientPrescriptionKey: `${row.patientId}_${row.prescriptionId}`,
+  }));
+
+  return (
+    <>
+      <AgentModal 
+        agentModal={agentModal} 
+        setAgentModal={setAgentModal} 
+        setAgentNumber={setAgentNumber} 
+        handleAgentNumber={handleAgentNumber} 
+      />
+
+      <Box sx={{ bgcolor: theme.palette.primary.light, display: "flex", height: "100%" }}>
+        <PageContainer>
+          <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-start" }}>
+            <CampaignsList
+              selected={itemSelected}
+              setItemSelected={setItemSelected}
+              tableData={tableDataWithKey}
+              isLoading={isLoading}
+              agentNumber={agentNumber}
+              campaignNumbers={campaignNumbers}
+              pageNumberClicked={pageNumberClicked}
+              setPageNumberClicked={setPageNumberClicked}
+              recordsToShow={pageSize}
+              setRecordsToShow={setPageSize}
+              totalRecords={totalRecords}
+              setTotalRecords={setTotalRecords}
+              getConversionPendingData={''}
+              handleCloseLead={handleCloseLead}
+              handleCaptureResponse={handleCaptureResponse}
+              tab={tab}
+              onLoadMore={handleLoadMore}
+              onScrollHandlersReady={handleScrollHandlersReady}
+              isLoadingMore={isLoadingMore}
+            />
+
+            {/* Close Lead Modal */}
+            <Modal open={closeLeadModal} onClose={closingCloseLeadModal} sx={modalStyles}>
+              <Box sx={modalContainerStyles}>
+                <Box sx={{
+                  ...iconContainerStyles,
+                  backgroundColor: "rgba(255, 152, 0, 0.1)",
+                  border: "2px solid",
+                  borderColor: "warning.main"
+                }}>
+                  <ErrorOutlineIcon sx={{ color: "warning.main", fontSize: "1.5rem" }} />
+                </Box>
+
+                <Typography variant="subtitle1" fontWeight={600} color="text.primary" sx={{ mb: 1 }}>
+                  Confirm Lead Closure
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.4 }}>
+                  Are you sure you want to close this lead? This action cannot be undone.
+                </Typography>
+
+                <Box display="flex" justifyContent="center" gap={1.5} sx={{ width: "100%" }}>
+                  <Button
+                    onClick={closingCloseLeadModal}
+                    variant="outlined"
+                    sx={{
+                      ...secondaryButtonStyles,
+                      borderColor: "grey.400",
+                      color: "text.secondary",
+                      '&:hover': { borderColor: "grey.600", backgroundColor: "grey.50" }
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => handleConfirmCloseLead(rowDataCL)}
+                    variant="contained"
+                    sx={{
+                      ...primaryButtonStyles,
+                      backgroundColor: "warning.main",
+                      '&:hover': { backgroundColor: "warning.dark" }
+                    }}
+                  >
+                    Close Lead
+                  </Button>
+                </Box>
+              </Box>
+            </Modal>
+
+            {/* Success/DND Modal */}
+            <Modal open={successMsgModal} onClose={() => setSuccessMsgModal(false)} sx={modalStyles}>
+              <Box sx={modalContainerStyles}>
+                <Box sx={{
+                  ...iconContainerStyles,
+                  backgroundColor: modalType === "dnd" ? "rgba(244, 67, 54, 0.1)" : "rgba(76, 175, 80, 0.1)",
+                  border: "2px solid",
+                  borderColor: modalType === "dnd" ? "error.main" : "success.main",
+                }}>
+                  {modalType === "dnd" ? (
+                    <WarningAmberIcon sx={{ color: "error.main", fontSize: "1.5rem" }} />
+                  ) : (
+                    <CheckCircleOutlineIcon sx={{ color: "success.main", fontSize: "1.5rem" }} />
+                  )}
+                </Box>
+
+                {modalType === "close" && (
+                  <>
+                    <Typography variant="subtitle1" fontWeight={600} color="success.main" sx={{ mb: 1 }}>
+                      Lead Closed Successfully!
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+                      The lead has been closed and saved in the system.
+                    </Typography>
+                  </>
+                )}
+
+                {modalType === "capture" && (
+                  <>
+                    <Typography variant="h6" fontWeight="bold" color="success.main">
+                      Response Captured Successfully!
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      The patient's response has been recorded.
+                    </Typography>
+                  </>
+                )}
+
+                {modalType === "dnd" && (
+                  <>
+                    <Typography variant="subtitle1" fontWeight={600} color="error.main" sx={{ mb: 1 }}>
+                      DND Enabled!
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+                      DND has been enabled for patient {rowDataCR?.patientId}.
+                    </Typography>
+                  </>
+                )}
+
+                <Button
+                  onClick={() => setSuccessMsgModal(false)}
+                  variant="contained"
+                  sx={{
+                    ...primaryButtonStyles,
+                    mt: 1.5,
+                    backgroundColor: modalType === "dnd" ? "error.main" : "success.main",
+                    '&:hover': { backgroundColor: modalType === "dnd" ? "error.dark" : "success.dark" }
+                  }}
+                >
+                  OK
+                </Button>
+              </Box>
+            </Modal>
+
+            {/* Capture Response Modal */}
+            <DispositionFormCA
+              open={captureResponseModal}
+              onClose={() => closingCaptureResponseModal(rowDataCR)}
+              handleSubmitCapture={handleSubmitCaptureResponse}
+              rowData={rowDataCR}
+            />
+          </Box>
+        </PageContainer>
+      </Box>
+    </>
+  );
+};
+
+export default Campaigns;
